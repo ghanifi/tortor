@@ -9,7 +9,7 @@
     "encrypt": "node scripts/encrypt-password.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.30.0",
+    "@anthropic-ai/sdk": "^0.40.0",
     "axios": "^1.7.0",
     "node-cron": "^3.0.3",
     "playwright": "^1.45.0",
@@ -17,5 +17,8 @@
   },
   "devDependencies": {
     "jest": "^29.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }
