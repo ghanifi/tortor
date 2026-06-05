@@ -13,6 +13,11 @@ const DEFAULT_STATE = {
   last_check: null,
   active_layer: 1
 };
+Object.freeze(DEFAULT_STATE.session);
+Object.freeze(DEFAULT_STATE.regime);
+Object.freeze(DEFAULT_STATE.risk);
+Object.freeze(DEFAULT_STATE.ai_usage);
+Object.freeze(DEFAULT_STATE);
 
 function loadState() {
   if (!fs.existsSync(STATE_PATH)) return JSON.parse(JSON.stringify(DEFAULT_STATE));

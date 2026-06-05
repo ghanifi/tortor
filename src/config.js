@@ -31,19 +31,17 @@ function decrypt(encryptedValue) {
   const iv = data.slice(0, 12);
   const tag = data.slice(12, 28);
   const encrypted = data.slice(28);
-  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv, { authTagLength: 16 });
+  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
   decipher.setAuthTag(tag);
   return decipher.update(encrypted, null, 'utf8') + decipher.final('utf8');
 }
 
 function loadConfig() {
   const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-  if (raw.etoro?.password?.startsWith('encrypted:')) {
-    try {
-      raw.etoro.password = decrypt(raw.etoro.password);
-    } catch (e) {
-      // Leave as-is if decryption fails (e.g. placeholder value or wrong key)
-    }
+  const pw = raw.etoro?.password;
+  const PLACEHOLDER = 'encrypted:REPLACE_AFTER_RUNNING_npm_run_encrypt';
+  if (pw?.startsWith('encrypted:') && pw !== PLACEHOLDER) {
+    raw.etoro.password = decrypt(pw); // throws loudly if BOT_SECRET wrong
   }
   return raw;
 }
