@@ -1,0 +1,21 @@
+{
+  "name": "etoro-bot",
+  "version": "1.0.0",
+  "description": "Automated eToro trading bot",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "jest --coverage --passWithNoTests",
+    "encrypt": "node scripts/encrypt-password.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.0",
+    "axios": "^1.7.0",
+    "node-cron": "^3.0.3",
+    "playwright": "^1.45.0",
+    "technicalindicators": "^3.1.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}

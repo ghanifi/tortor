@@ -1,0 +1,40 @@
+{
+  "etoro": {
+    "username": "your@email.com",
+    "password": "encrypted:REPLACE_AFTER_RUNNING_npm_run_encrypt"
+  },
+  "slack": {
+    "webhook_url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+  },
+  "ai": {
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5-20251001",
+    "daily_call_limit": 20,
+    "monthly_budget_usd": 10.00
+  },
+  "strategy": {
+    "active": "dca",
+    "check_interval_minutes": 10,
+    "cooldown_hours": 2,
+    "max_daily_trades": 10,
+    "drawdown_stop_pct": 20,
+    "asset_classes": {
+      "BTC": "crypto",
+      "ETH": "crypto"
+    }
+  },
+  "thresholds": {
+    "stocks": { "buy": -7, "sell": [7, 10, 13] },
+    "crypto": { "buy": -12, "sell": [10, 15, 20] }
+  },
+  "budget": {
+    "default": "equal_split",
+    "per_asset": {}
+  },
+  "watchlist": ["TSLA", "AAPL", "BTC"],
+  "safety": {
+    "min_cash_reserve": 100,
+    "max_exposure_pct": 30,
+    "dry_run": true
+  }
+}
