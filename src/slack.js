@@ -1,4 +1,6 @@
 const axios = require('axios');
+const https = require('https');
+const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 const LAYER_NAMES = ['', 'HTTP API (Katman 1)', 'Playwright DOM (Katman 2)', 'Full Automation (Katman 3)'];
 
@@ -10,7 +12,7 @@ class SlackNotifier {
   async send(text) {
     if (!this.webhookUrl) { console.log('[Slack]', text); return; }
     try {
-      await axios.post(this.webhookUrl, { text });
+      await axios.post(this.webhookUrl, { text }, { httpsAgent });
     } catch (err) {
       console.error('[Slack error]', err.message);
     }
@@ -25,7 +27,8 @@ class SlackNotifier {
       else if (a.action === 'sell') status = '🔴 SATILDI';
       else if (a.action === 'edge') status = '🔍 edge zone';
       else if (a.blocked) status = `🚫 ${a.blockedReason}`;
-      return `  ${a.symbol.padEnd(6)} $${a.price}  avg $${a.avgCost}  ${sign}${a.change.toFixed(1)}%  ${status}`;
+      const reasonSuffix = a.reason ? `  ← ${a.reason}` : '';
+      return `  ${a.symbol.padEnd(6)} $${a.price}  avg $${a.avgCost}  ${sign}${a.change.toFixed(1)}%  ${status}${reasonSuffix}`;
     }).join('\n');
 
     const pnlSign = totalPnl >= 0 ? '+' : '';
@@ -53,7 +56,7 @@ class SlackNotifier {
         `🟢 ALIM — ${symbol} (DCA)`,
         `   Fiyat: $${price} | $${amount.toFixed(2)} harcandı`,
         newAvg ? `   Yeni avg: $${newAvg.toFixed(2)} | Kalan nakit: $${cashRemaining.toFixed(2)}` : '',
-        reason ? `   Sinyal: "${reason}"` : ''
+        reason ? `   Neden: "${reason}"` : ''
       ].filter(Boolean).join('\n');
     }
     const pnlSign = pnl >= 0 ? '+' : '';
@@ -61,7 +64,7 @@ class SlackNotifier {
       `🔴 SATIM — ${symbol} (Tranche ${tranche})`,
       `   Fiyat: $${price} | Kâr: ${pnlSign}$${Math.abs(pnl).toFixed(2)}`,
       `   Kalan nakit: $${cashRemaining.toFixed(2)}`,
-      reason ? `   AI sinyal: "${reason}"` : ''
+      reason ? `   Neden: "${reason}"` : ''
     ].filter(Boolean).join('\n');
   }
 

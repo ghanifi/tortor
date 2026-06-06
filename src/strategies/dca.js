@@ -14,7 +14,8 @@ function decide({ change, thresholds, indicators }) {
     if (indicators?.rsi != null && indicators.rsi > 55) {
       return { action: 'hold', portion: 0, reason: `At threshold but RSI=${indicators.rsi.toFixed(0)}, not oversold` };
     }
-    return { action: 'buy', portion: 1.0, reason: `${change.toFixed(1)}% dip → DCA buy` };
+    const rsiNote = indicators?.rsi != null ? ` RSI=${indicators.rsi.toFixed(0)}` : '';
+    return { action: 'buy', portion: 1.0, reason: `${change.toFixed(1)}% dip → DCA buy${rsiNote}` };
   }
 
   // Edge zone (within EDGE_BUFFER% of any threshold, strictly between threshold and boundary)
@@ -22,7 +23,9 @@ function decide({ change, thresholds, indicators }) {
     return { action: 'edge', portion: 0, reason: `within ${EDGE_BUFFER}% of threshold` };
   }
 
-  return { action: 'hold', portion: 0, reason: `${change.toFixed(1)}% — within range` };
+  const rsiStr = indicators?.rsi != null ? ` RSI=${indicators.rsi.toFixed(0)}` : '';
+  const sigStr = indicators?.signal && indicators.signal !== 'neutral' ? ` (${indicators.signal})` : '';
+  return { action: 'hold', portion: 0, reason: `${change.toFixed(1)}% — bekle${rsiStr}${sigStr}` };
 }
 
 function calcNewAvgCost(oldQty, oldAvg, newQty, newPrice) {

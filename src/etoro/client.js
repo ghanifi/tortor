@@ -33,8 +33,11 @@ class EToroClient {
   }
 
   async _tryLayer1(op) {
+    // Load browser-captured auth session (cookies + JWT) first
+    this.httpClient.loadAuthSession();
+    // Also apply any Playwright-captured cookies from state (legacy fallback)
     const state = loadState();
-    if (state.session?.cookies?.length) {
+    if (state.session?.cookies?.length && !this.httpClient.cookieStr) {
       this.httpClient.setCookies(state.session.cookies);
     }
     return await op(this.httpClient);
