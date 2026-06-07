@@ -12,9 +12,12 @@ const { loadState, saveState } = require('../state');
 const EToroClient = require('../etoro/client');
 
 const app = express();
-const PORT = process.env.UI_PORT || 3000;
+const PORT = parseInt(process.env.UI_PORT || '3000', 10);
 const PASSWORD = process.env.UI_PASSWORD || 'changeme';
-const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+const SESSION_SECRET = process.env.SESSION_SECRET || (() => {
+  console.warn('[UI] SESSION_SECRET not set — sessions will be invalidated on restart');
+  return crypto.randomBytes(32).toString('hex');
+})();
 const CONFIG_PATH = path.join(process.cwd(), 'config.json');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const LOG_DIR = path.join(process.cwd(), 'logs');
@@ -62,7 +65,10 @@ function requireAuth(req, res, next) {
 
 // Login / logout (no auth required)
 app.post('/login', (req, res) => {
-  if (req.body.password === PASSWORD) {
+  const provided = req.body.password || '';
+  const match = provided.length === PASSWORD.length &&
+    crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(PASSWORD));
+  if (match) {
     req.session.authenticated = true;
     return res.json({ ok: true });
   }
