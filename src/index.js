@@ -12,9 +12,10 @@ const { analyzeChart } = require('./analysis/ai_chart');
 const { check, updateAfterTrade, checkDrawdown, resetDailyCounters } = require('./risk');
 const { calcChange, calcPnL, calcTotalPortfolioValue, allocateBudget } = require('./portfolio');
 const SlackNotifier = require('./slack');
-const bridge = require('./etoro/bridge');
 const path = require('path');
 const fs = require('fs');
+const { isMarketOpen } = require('./market-hours');
+const LOG_DIR = path.join(process.cwd(), 'logs');
 
 let config = null;
 let slack = null;
@@ -49,11 +50,7 @@ async function runCycle() {
     // 2. Fetch portfolio + prices
     let portfolioData = null;
     try {
-      portfolioData = await etoroClient.execute(
-        (http) => http.getLoginData(),
-        (dom) => dom.getPortfolioPositions(),
-        (pw) => pw.getPortfolioPositions()
-      );
+      portfolioData = await etoroClient.getPortfolioPositions();
     } catch (err) {
       await slack.send(slack.formatError({ message: err.message, lastSuccess: state.last_check }));
       saveState(state);
@@ -61,51 +58,19 @@ async function runCycle() {
       return;
     }
 
-    // Normalize portfolio data — structure differs by layer
+    // Normalize portfolio — Public API returns { positions, cash } with symbol already set
     const prices = {};
-    let normalizedPositions = []; // [{ symbol, units, avgCost }]
-    let cash = 0;
-
-    if (portfolioData?.AggregatedResult) {
-      // Layer 1: logindata v2 format
-      const api = portfolioData.AggregatedResult.ApiResponses;
-      const portfolio = api?.PrivatePortfolio?.Content?.ClientPortfolio;
-      const rawPositions = portfolio?.Positions || [];
-      cash = portfolio?.Credit || 0;
-
-      const rates = api?.Rates?.Content || {};
-      const metadata = api?.InstrumentsMetadata?.Content || {};
-
-      // Group positions by InstrumentID (multiple lots → one entry with weighted avg)
-      const byInstrument = {};
-      for (const pos of rawPositions) {
-        const id = String(pos.InstrumentID);
-        if (!byInstrument[id]) byInstrument[id] = { totalAmount: 0, totalUnits: 0, symbol: metadata[id]?.SymbolFull || id };
-        byInstrument[id].totalAmount += pos.Amount || 0;
-        byInstrument[id].totalUnits += pos.Units || 0;
-      }
-      normalizedPositions = Object.entries(byInstrument).map(([id, g]) => ({
-        symbol: g.symbol, instrumentId: id,
-        units: g.totalUnits,
-        avgCost: g.totalUnits > 0 ? g.totalAmount / g.totalUnits : 0
-      }));
-
-      // Current prices from Rates section (mid-price)
-      for (const [id, rate] of Object.entries(rates)) {
-        const sym = metadata[id]?.SymbolFull || id;
-        prices[sym] = (rate.Bid + rate.Ask) / 2;
-      }
-    } else {
-      // Layers 2/3: DOM format
-      const rawPositions = portfolioData?.positions || [];
-      cash = portfolioData?.cash || 0;
-      normalizedPositions = rawPositions.map(p => ({
-        symbol: p.symbol, instrumentId: null,
-        units: p.units || 0, avgCost: p.avgCost || p.openRate || 0
-      }));
-      for (const p of rawPositions) {
-        if (p.symbol) prices[p.symbol] = p.currentPrice || 0;
-      }
+    const rawPositions = portfolioData?.positions || [];
+    let cash = portfolioData?.cash || 0;
+    const normalizedPositions = rawPositions.map(p => ({
+      symbol: p.symbol,
+      instrumentId: p.instrumentId,
+      positionIds: p.positionIds,
+      units: p.units || 0,
+      avgCost: p.avgCost || 0,
+    }));
+    for (const p of rawPositions) {
+      if (p.symbol && p.currentPrice) prices[p.symbol] = p.currentPrice;
     }
 
     // Update state positions from live data
@@ -114,6 +79,8 @@ async function runCycle() {
       if (!sym) continue;
       if (!state.positions[sym]) state.positions[sym] = {};
       state.positions[sym].quantity = pos.units;
+      state.positions[sym].positionIds = pos.positionIds;
+      state.positions[sym].instrumentId = pos.instrumentId;
       // Set avg_cost from live data if bot hasn't tracked it (pre-existing positions)
       if (!state.positions[sym].avg_cost && pos.avgCost) {
         state.positions[sym].avg_cost = pos.avgCost;
@@ -137,6 +104,10 @@ async function runCycle() {
       cash = configCash;
       console.log(`[Cash] Using config override: $${cash}`);
     }
+
+    // Persist prices + cash for UI display
+    state.prices = prices;
+    state.cash = cash;
 
     // All symbols to evaluate: portfolio + watchlist
     const allSymbols = [...new Set([
@@ -230,40 +201,9 @@ async function runCycle() {
         }
       }
 
-      // AI edge analysis
-      if (decision.action === 'edge' && canCallAI(state).allowed) {
-        try {
-          const screenshotDir = path.join(process.cwd(), 'logs');
-          if (!fs.existsSync(screenshotDir)) fs.mkdirSync(screenshotDir, { recursive: true });
-          const screenshotPath = path.join(screenshotDir, `${symbol}_chart.png`);
-
-          await etoroClient.execute(
-            async () => { throw new Error('No screenshot in HTTP layer'); },
-            (dom) => dom.captureChartScreenshot(symbol, screenshotPath),
-            (pw) => pw.captureChartScreenshot(symbol, screenshotPath)
-          );
-
-          const aiResult = await analyzeChart({
-            screenshotPath, symbol,
-            changePct: change || 0,
-            rsi: indicators.rsi,
-            macd: indicators.macd,
-            regime: `${macroEquity}/${macroCrypto}`
-          });
-          state = recordCall(state, aiResult.cost);
-
-          if (shouldWarnBudget(state)) {
-            await slack.send(slack.formatAiBudgetWarning({
-              monthlyUsed: state.ai_usage.monthly_cost_usd,
-              monthlyBudget: state.ai_usage.monthly_budget_usd
-            }));
-          }
-
-          if (aiResult.action === 'buy') decision = { action: 'buy', portion: 1.0, reason: aiResult.reason };
-          else if (aiResult.action === 'sell') decision = { action: 'sell', portion: 0.25, reason: aiResult.reason };
-        } catch (err) {
-          console.warn(`[AI] ${symbol} analysis failed:`, err.message);
-        }
+      // AI edge analysis — chart screenshot not available via Public API, skip
+      if (decision.action === 'edge') {
+        decision = { action: 'hold', portion: 0, reason: 'edge — AI analizi atlandı (chart yok)' };
       }
 
       // Risk check
@@ -280,16 +220,24 @@ async function runCycle() {
         continue;
       }
 
-      // dry_run: bridge ile simüle et (continue kaldırıldı)
-      if ((decision.action === 'buy' || decision.action === 'sell') && config.safety?.dry_run) {
-        console.log(`[DRY RUN] ${decision.action.toUpperCase()} ${symbol}: ${decision.reason}`);
-        // Bridge varsa simüle et, yoksa sadece logla
-        const bridgeReady = await bridge.isAvailable();
-        if (!bridgeReady) {
-          assetReports.push({ symbol, price: currentPrice, avgCost: pos.avg_cost, change: change || 0, action: decision.action, reason: decision.reason });
+      // Market hours check — skip buy/sell for stocks if exchange is closed
+      if (decision.action === 'buy' || decision.action === 'sell') {
+        const market = isMarketOpen(symbol);
+        if (!market.open) {
+          console.log(`[MarketHours] ${symbol} piyasa kapalı (${market.exchange}): ${market.reason}`);
+          assetReports.push({
+            symbol, price: currentPrice, avgCost: pos.avg_cost,
+            change: change || 0, action: 'hold',
+            reason: `Piyasa kapalı — ${market.reason}`
+          });
           continue;
         }
-        // Bridge varsa aşağıdaki execution bloklarına geç (bridge dry_run=true ile çalışır)
+      }
+
+      if ((decision.action === 'buy' || decision.action === 'sell') && config.safety?.dry_run) {
+        console.log(`[DRY RUN] ${decision.action.toUpperCase()} ${symbol}: ${decision.reason}`);
+        assetReports.push({ symbol, price: currentPrice, avgCost: pos.avg_cost, change: change || 0, action: decision.action, reason: decision.reason });
+        continue;
       }
 
       if (decision.action === 'buy') {
@@ -297,21 +245,7 @@ async function runCycle() {
         if (budget > 0) {
           try {
             const qty = budget / currentPrice;
-            // Extension bridge (tarayıcıdan çalışır, Datadome yok)
-            const bridgeReady = await bridge.isAvailable();
-            if (bridgeReady) {
-              await bridge.executeTrade({
-                symbol, action: 'buy', amount: budget,
-                dryRun: config.safety?.dry_run
-              });
-            } else {
-              // Fallback: doğrudan HTTP/DOM katmanları
-              await etoroClient.execute(
-                (http) => http.openPosition({ instrumentId: symbol, isBuy: true, amount: budget }),
-                (dom) => dom.buyAsset({ symbol, amount: budget }),
-                (pw) => pw.buyAsset({ symbol, amount: budget })
-              );
-            }
+            await etoroClient.buyAsset({ symbol, amount: budget });
             const newAvg = calcNewAvgCost(pos.quantity || 0, pos.avg_cost || currentPrice, qty, currentPrice);
             state.positions[symbol] = { ...pos, avg_cost: newAvg, quantity: (pos.quantity || 0) + qty };
             state = updateAfterTrade(state, symbol);
@@ -319,6 +253,12 @@ async function runCycle() {
               action: 'buy', symbol, price: currentPrice, amount: budget,
               newAvg, cashRemaining: cash - budget, reason: decision.reason
             }));
+            // Log to trade history
+            const tradeEntry = JSON.stringify({
+              ts: new Date().toISOString(), symbol, action: 'buy',
+              amount: budget, price: currentPrice, reason: decision.reason
+            });
+            fs.appendFileSync(path.join(LOG_DIR, 'trades.jsonl'), tradeEntry + '\n');
           } catch (err) {
             console.error(`[Trade] Buy ${symbol} failed:`, err.message);
           }
@@ -328,21 +268,11 @@ async function runCycle() {
         const proceeds = sellQty * currentPrice;
         const pnlThisSell = sellQty * (currentPrice - (pos.avg_cost || currentPrice));
         try {
-          const bridgeReady = await bridge.isAvailable();
-          if (bridgeReady) {
-            await bridge.executeTrade({
-              symbol, action: 'sell',
-              amount: sellQty * currentPrice,
-              positionId: pos.positionId,
-              dryRun: config.safety?.dry_run
-            });
-          } else {
-            await etoroClient.execute(
-              (http) => http.closePosition(pos.positionId || symbol),
-              (dom) => dom.sellPosition(pos.positionId || symbol),
-              (pw) => pw.sellPosition(pos.positionId || symbol)
-            );
-          }
+          await etoroClient.sellPosition({
+            positionIds: pos.positionIds,
+            positionId: pos.positionId,
+            instrumentId: pos.instrumentId,
+          });
           state.positions[symbol].quantity -= sellQty;
           if (state.positions[symbol].quantity <= 0.001) state.positions[symbol].avg_cost = null;
           state = updateAfterTrade(state, symbol);
@@ -351,6 +281,13 @@ async function runCycle() {
             pnl: pnlThisSell, cashRemaining: cash + proceeds,
             tranche: `${(decision.portion * 100).toFixed(0)}%`, reason: decision.reason
           }));
+          // Log to trade history
+          const tradeEntry = JSON.stringify({
+            ts: new Date().toISOString(), symbol, action: 'sell',
+            amount: proceeds, price: currentPrice,
+            pnl: Number(pnlThisSell.toFixed(2)), reason: decision.reason
+          });
+          fs.appendFileSync(path.join(LOG_DIR, 'trades.jsonl'), tradeEntry + '\n');
         } catch (err) {
           console.error(`[Trade] Sell ${symbol} failed:`, err.message);
         }
@@ -362,7 +299,7 @@ async function runCycle() {
     // 4. Send Slack check report
     const totalPnlPct = portfolioValue > 0 ? (totalPnl / (portfolioValue - totalPnl)) * 100 : 0;
     await slack.send(slack.formatCheckReport({
-      layer: etoroClient.getActiveLayer(),
+      layer: 'Public API',
       cash,
       portfolioValue,
       assets: assetReports,
@@ -395,6 +332,10 @@ async function runCycle() {
 }
 
 async function main() {
+  // Ensure logs directory exists
+  if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
+  // Write PID for UI stop button
+  fs.writeFileSync(path.join(process.cwd(), 'bot.pid'), process.pid.toString());
   config = loadConfig();
   slack = new SlackNotifier(config.slack?.webhook_url);
   etoroClient = new EToroClient(config);
