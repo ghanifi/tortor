@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>eToro Bot</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <nav id="sidebar">
+      <div class="sidebar-header">
+        <div class="brand">⚡ eToro Bot</div>
+        <div id="bot-status" class="status-running">● Çalışıyor</div>
+      </div>
+      <ul class="nav-list">
+        <li class="nav-item" data-route="dashboard"  onclick="navigate('dashboard')">📊 Dashboard</li>
+        <li class="nav-item" data-route="portfolio"  onclick="navigate('portfolio')">💼 Portföy</li>
+        <li class="nav-item" data-route="settings"   onclick="navigate('settings')">⚙️ Ayarlar</li>
+        <li class="nav-item" data-route="log"        onclick="navigate('log')">📝 Log</li>
+        <li class="nav-item" data-route="history"    onclick="navigate('history')">📋 Geçmiş</li>
+      </ul>
+      <div class="sidebar-footer">
+        <div class="last-check-label">Son kontrol</div>
+        <div id="last-check-time" class="last-check-time">—</div>
+        <button class="btn-stop" onclick="stopBot()">⏹ Durdur</button>
+      </div>
+    </nav>
+    <main id="content">
+      <div class="loading">Yükleniyor...</div>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+  <script src="pages/dashboard.js"></script>
+  <script src="pages/portfolio.js"></script>
+  <script src="pages/settings.js"></script>
+  <script src="pages/log.js"></script>
+  <script src="pages/history.js"></script>
+</body>
+</html>
