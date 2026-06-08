@@ -320,6 +320,12 @@ async function runCycle() {
       }
     }));
 
+    // Save last decisions with market hours status for UI display
+    state.last_decisions = assetReports.map(r => {
+      const market = isMarketOpen(r.symbol);
+      return { ...r, market_open: market.open, exchange: market.exchange, checked_at: new Date().toISOString() };
+    });
+
     state.last_check = new Date().toISOString();
     saveState(state);
 

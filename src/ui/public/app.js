@@ -69,6 +69,8 @@ const content = document.getElementById('content');
 function navigate(route) {
   // Stop any active SSE connection from previous page
   if (window._activeSSE) { window._activeSSE.close(); window._activeSSE = null; }
+  // Stop dashboard auto-refresh timer when leaving dashboard
+  if (window.DashboardPage?._refreshTimer) { clearInterval(window.DashboardPage._refreshTimer); window.DashboardPage._refreshTimer = null; }
 
   // Update active nav item
   document.querySelectorAll('.nav-item').forEach(el => {

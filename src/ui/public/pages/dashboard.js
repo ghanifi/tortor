@@ -1,5 +1,7 @@
 // src/ui/public/pages/dashboard.js
 window.DashboardPage = {
+  _refreshTimer: null,
+
   async render(container) {
     try {
       const [state, config] = await Promise.all([
@@ -15,7 +17,6 @@ window.DashboardPage = {
         return sum + (p.quantity || 0) * (state.prices?.[sym] || p.avg_cost || 0);
       }, 0);
       const cash = state.cash || 0;
-      const totalVal = portfolioVal + cash;
 
       // P&L
       const totalCost = openPositions.reduce((sum, [, p]) => {
@@ -27,13 +28,16 @@ window.DashboardPage = {
       const dryRun = config?.safety?.dry_run ?? true;
       const risk = state.risk || {};
       const peakVal = risk.portfolio_peak_value || 0;
+      const totalVal = portfolioVal + cash;
       const drawdownPct = peakVal > 0 ? ((peakVal - totalVal) / peakVal) * 100 : 0;
 
-      // Build recent decisions from positions (last_trade_at)
-      const decisions = Object.entries(state.positions || {})
-        .filter(([, p]) => p.last_trade_at)
-        .sort((a, b) => new Date(b[1].last_trade_at) - new Date(a[1].last_trade_at))
-        .slice(0, 10);
+      // Last decisions from most recent cycle
+      const decisions = state.last_decisions || [];
+
+      // Last check age
+      const lastCheckAge = state.last_check
+        ? Math.round((Date.now() - new Date(state.last_check).getTime()) / 60000)
+        : null;
 
       container.innerHTML = `
         <!-- Stats row -->
@@ -82,31 +86,53 @@ window.DashboardPage = {
           </div>
         </div>
 
-        <!-- Recent decisions -->
+        <!-- Last cycle decisions -->
         <div class="card">
-          <div class="card-title">Son Kararlar</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <div class="card-title" style="margin-bottom:0">Son Döngü — Watchlist Durumu</div>
+            <div style="display:flex;align-items:center;gap:10px">
+              ${lastCheckAge !== null ? `<span style="color:var(--muted);font-size:11px">
+                ${lastCheckAge === 0 ? 'az önce' : lastCheckAge + ' dk önce'}
+              </span>` : ''}
+              <span id="dash-refresh-dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green)" title="30s'de bir yenileniyor"></span>
+            </div>
+          </div>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
                   <th>Sembol</th>
-                  <th class="right">Avg Maliyet</th>
-                  <th class="right">Güncel Fiyat</th>
+                  <th class="right">Fiyat</th>
                   <th class="right">Değişim</th>
-                  <th class="right">Son İşlem</th>
+                  <th>Karar</th>
+                  <th>Piyasa</th>
+                  <th>Neden</th>
                 </tr>
               </thead>
               <tbody>
-                ${decisions.length === 0 ? '<tr><td colspan="5" style="color:var(--subtle);padding-top:12px">Henüz işlem yok</td></tr>' :
-                  decisions.map(([sym, p]) => {
-                    const price = state.prices?.[sym] || null;
-                    const chgPct = (price && p.avg_cost) ? ((price - p.avg_cost) / p.avg_cost) * 100 : null;
+                ${decisions.length === 0
+                  ? '<tr><td colspan="6" style="color:var(--subtle);padding-top:12px">Henüz döngü verisi yok — bir sonraki döngü bekleniyor...</td></tr>'
+                  : decisions.map(d => {
+                    const chgColor = d.change == null ? 'inherit' : d.change >= 0 ? 'var(--green)' : 'var(--red)';
+                    const badge = d.blocked
+                      ? `<span class="badge" style="background:#92400e;color:#fef3c7">BLOKE</span>`
+                      : d.action === 'buy'
+                        ? `<span class="badge badge-buy">ALIŞ</span>`
+                        : d.action === 'sell'
+                          ? `<span class="badge badge-sell">SATIŞ</span>`
+                          : `<span class="badge">BEKLE</span>`;
+                    const marketDot = d.exchange === 'CRYPTO'
+                      ? `<span style="color:var(--accent);font-size:11px">⟳ CRYPTO</span>`
+                      : d.market_open
+                        ? `<span style="color:var(--green);font-size:11px">● ${esc(d.exchange)} Açık</span>`
+                        : `<span style="color:var(--red);font-size:11px">● ${esc(d.exchange)} Kapalı</span>`;
                     return `<tr>
-                      <td style="font-weight:600">${esc(sym)}</td>
-                      <td class="right">${fmt$(p.avg_cost)}</td>
-                      <td class="right">${fmt$(price)}</td>
-                      <td class="right" style="color:${chgPct == null ? 'inherit' : chgPct >= 0 ? 'var(--green)' : 'var(--red)'}">${fmtPct(chgPct)}</td>
-                      <td class="right" style="color:var(--muted)">${fmtTime(p.last_trade_at)}</td>
+                      <td style="font-weight:600">${esc(d.symbol)}</td>
+                      <td class="right">${fmt$(d.price)}</td>
+                      <td class="right" style="color:${chgColor}">${fmtPct(d.change)}</td>
+                      <td>${badge}</td>
+                      <td>${marketDot}</td>
+                      <td style="color:var(--muted);font-size:11px;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(d.reason || '')}">${esc(d.reason || '—')}</td>
                     </tr>`;
                   }).join('')
                 }
@@ -115,6 +141,14 @@ window.DashboardPage = {
           </div>
         </div>
       `;
+
+      // Auto-refresh every 30s while on dashboard
+      clearInterval(DashboardPage._refreshTimer);
+      DashboardPage._refreshTimer = setInterval(() => {
+        const content = document.getElementById('content');
+        if (content) DashboardPage.render(content);
+      }, 30000);
+
     } catch (err) {
       container.innerHTML = `<div style="color:var(--red)">Hata: ${err.message}</div>`;
     }
@@ -134,7 +168,8 @@ window.DashboardPage = {
   async resetDrawdown() {
     try {
       await apiPost('/api/risk/reset');
-      window.DashboardPage.render(document.getElementById('content'));
+      const content = document.getElementById('content');
+      if (content) DashboardPage.render(content);
     } catch (err) {
       alert('Hata: ' + err.message);
     }
