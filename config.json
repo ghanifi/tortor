@@ -29,6 +29,8 @@
     "atr_period": 14,
     "adx_threshold": 20,
     "rs_threshold": 70,
+    "technical_threshold": 65,
+    "correlation_max": 0.85,
     "min_global_state": "RISK_ON",
     "market_state_cache_minutes": 60
   },

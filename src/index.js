@@ -7,6 +7,8 @@ const { fetchSymbolPrices, fetchSymbolHistories, detectAssetRegimeV3 } = require
 const { getMarketState } = require('./analysis/market-state');
 const { calcRelativeStrength, fetchBenchmarkReturns, getExchangeBenchmark } = require('./analysis/relative-strength');
 const { decideMomentum, checkExitTrigger } = require('./strategies/momentum');
+const { calcTechnicalScore } = require('./analysis/technical-score');
+const { checkCorrelation } = require('./analysis/correlation');
 const { check, updateAfterTrade, checkDrawdown, resetDailyCounters } = require('./risk');
 const { calcPnL, calcTotalPortfolioValue, allocateBudget } = require('./portfolio');
 const SlackNotifier = require('./slack');
@@ -332,6 +334,10 @@ async function runCycle() {
         rsScore = calcRelativeStrength(assetReturn, benchReturn);
       }
 
+      // b2. Technical score (Layer 6)
+      const techResult = calcTechnicalScore(hist.closes, hist.highs, hist.lows, hist.volumes || []);
+      const techScore = techResult.score;
+
       // c. Exit triggers (only for open positions) — executed immediately, not deferred
       if ((pos.quantity || 0) > 0) {
         const exitResult = checkExitTrigger({
@@ -357,8 +363,9 @@ async function runCycle() {
 
       // d. Entry filters
       const pyramidLevel = pos.pyramid_level || 0;
-      const adxThreshold = config.strategy?.adx_threshold || 20;
-      const rsThreshold  = config.strategy?.rs_threshold  || 70;
+      const adxThreshold  = config.strategy?.adx_threshold    || 20;
+      const rsThreshold   = config.strategy?.rs_threshold      || 70;
+      const techThreshold = config.strategy?.technical_threshold || 65;
 
       let allFiltersPass = true;
       let failReason = null;
@@ -376,6 +383,9 @@ async function runCycle() {
       } else if (rsScore === null || rsScore < rsThreshold) {
         allFiltersPass = false;
         failReason = `RS filtresi: ${rsScore?.toFixed(0) || '?'} < ${rsThreshold} (benchmark'ın gerisinde)`;
+      } else if (techScore < techThreshold) {
+        allFiltersPass = false;
+        failReason = `Teknik filtre: ${techScore} < ${techThreshold} (RSI/MACD/Volume/ATR zayıf)`;
       }
 
       // e. Pyramid decision
@@ -399,7 +409,18 @@ async function runCycle() {
     // Pass 2: execute buys ranked by RS score (strongest signal first)
     buyCandidates.sort((a, b) => b.rsScore - a.rsScore);
 
+    const corrMax = config.strategy?.correlation_max ?? 0.85;
+
     for (const { symbol, pos, currentPrice, changePct, assetRegime, decision, rsScore } of buyCandidates) {
+      // Correlation check (Layer 7) — only for new entries (tranche 1), not pyramid additions
+      if (decision.tranche === 1) {
+        const corrResult = checkCorrelation(historyMap[symbol]?.closes || [], state.positions, historyMap, corrMax);
+        if (corrResult.blocked) {
+          assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: `Korelasyon filtresi: ${corrResult.with} ile r=${corrResult.correlation.toFixed(2)}` });
+          continue;
+        }
+      }
+
       // Risk check — re-evaluated here so cash state reflects prior buys in this cycle
       const riskResult = check({
         symbol, action: decision.action,
