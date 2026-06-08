@@ -215,7 +215,11 @@ async function runCycle() {
           state = await executeSell({ symbol: sym, pos, portion: 1, reason: 'Market state: PANIC — acil çıkış', currentPrice: price, state });
         } else {
           console.error(`[PANIC] ${sym} satılamadı — fiyat verisi yok, manuel müdahale gerekli`);
-          await slack.send(`⚠️ PANIC: ${sym} otomatik çıkış BAŞARISIZ — fiyat verisi yok, manuel işlem gerekli`);
+          try {
+            await slack.send(`⚠️ PANIC: ${sym} otomatik çıkış BAŞARISIZ — fiyat verisi yok, manuel işlem gerekli`);
+          } catch (slackErr) {
+            console.error('[PANIC] Slack alert failed:', slackErr.message);
+          }
         }
       }
 
