@@ -1,4 +1,4 @@
-const { RSI, MACD, BollingerBands, ATR } = require('technicalindicators');
+const { RSI, MACD, BollingerBands, ATR, ADX, EMA } = require('technicalindicators');
 
 function calculateRSI(closes, period = 14) {
   if (closes.length < period + 1) return null;
@@ -35,6 +35,19 @@ function calculateATR(highs, lows, closes, period = 14) {
   return values.length ? values[values.length - 1] : null;
 }
 
+function calculateADX(highs, lows, closes, period = 14) {
+  if (closes.length < period * 2) return null;
+  const values = ADX.calculate({ close: closes, high: highs, low: lows, period });
+  if (!values.length) return null;
+  return values[values.length - 1].adx;
+}
+
+function calculateEMA(closes, period) {
+  if (closes.length < period) return null;
+  const values = EMA.calculate({ values: closes, period });
+  return values.length ? values[values.length - 1] : null;
+}
+
 function analyzeSignals(closes, highs, lows) {
   const rsi = calculateRSI(closes);
   const macd = calculateMACD(closes);
@@ -65,4 +78,4 @@ function analyzeSignals(closes, highs, lows) {
   return { rsi, macd, bollinger, atr, signal, bullishCount, bearishCount };
 }
 
-module.exports = { calculateRSI, calculateMACD, calculateBollinger, calculateATR, analyzeSignals };
+module.exports = { calculateRSI, calculateMACD, calculateBollinger, calculateATR, calculateADX, calculateEMA, analyzeSignals };
