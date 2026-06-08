@@ -184,17 +184,35 @@ window.SettingsPage = {
     if (this._config.watchlist.includes(sym)) { input.value = ''; return; }
     this._config.watchlist.push(sym);
     input.value = '';
-    // Re-render just the tags section
-    document.getElementById('watchlist-tags').innerHTML = this._config.watchlist.map(s => `
-      <span class="tag">${s} <span class="tag-remove" onclick="SettingsPage.removeTag('${SettingsPage._esc(s)}')">✕</span></span>
-    `).join('');
+    this._renderTags();
+    this._saveWatchlist();
   },
 
   removeTag(sym) {
     this._config.watchlist = (this._config.watchlist || []).filter(s => s !== sym);
-    document.getElementById('watchlist-tags').innerHTML = this._config.watchlist.map(s => `
+    this._renderTags();
+    this._saveWatchlist();
+  },
+
+  _renderTags() {
+    document.getElementById('watchlist-tags').innerHTML = (this._config.watchlist || []).map(s => `
       <span class="tag">${s} <span class="tag-remove" onclick="SettingsPage.removeTag('${SettingsPage._esc(s)}')">✕</span></span>
     `).join('');
+  },
+
+  async _saveWatchlist() {
+    try {
+      await apiPost('/api/config', { watchlist: this._config.watchlist });
+      const statusEl = document.getElementById('save-status');
+      if (statusEl) {
+        statusEl.style.color = 'var(--green)';
+        statusEl.textContent = '✓ Watchlist kaydedildi';
+        setTimeout(() => { statusEl.textContent = ''; }, 2000);
+      }
+    } catch (err) {
+      const statusEl = document.getElementById('save-status');
+      if (statusEl) { statusEl.style.color = 'var(--red)'; statusEl.textContent = 'Hata: ' + err.message; }
+    }
   },
 
   async save() {
