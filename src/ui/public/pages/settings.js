@@ -139,6 +139,54 @@ window.SettingsPage = {
           </div>
         </div>
 
+        <!-- Strategy Filters -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-title">⚙️ Strateji Filtreleri</div>
+          <div class="grid-2">
+            <div>
+              <div class="field-row">
+                <span class="field-label" title="Alım için gereken minimum piyasa durumu">Min piyasa durumu</span>
+                <select id="min-global-state" class="input-field small">
+                  <option value="RISK_ON"      ${(strategy.min_global_state ?? 'RISK_ON') === 'RISK_ON'      ? 'selected' : ''}>RISK_ON</option>
+                  <option value="RISK_NEUTRAL" ${(strategy.min_global_state ?? 'RISK_ON') === 'RISK_NEUTRAL' ? 'selected' : ''}>RISK_NEUTRAL</option>
+                </select>
+              </div>
+              <div class="field-row">
+                <span class="field-label" title="Minimum ADX değeri (trend gücü)">ADX eşiği</span>
+                <input id="adx-threshold" class="input-field small" type="number" value="${strategy.adx_threshold ?? 20}">
+              </div>
+              <div class="field-row">
+                <span class="field-label" title="Minimum RS skoru (0-100)">RS skoru eşiği</span>
+                <input id="rs-threshold" class="input-field small" type="number" value="${strategy.rs_threshold ?? 70}">
+              </div>
+              <div class="field-row">
+                <span class="field-label" title="Minimum teknik skor (RSI+MACD+Vol+ATR)">Teknik skor eşiği</span>
+                <input id="technical-threshold" class="input-field small" type="number" value="${strategy.technical_threshold ?? 65}">
+              </div>
+            </div>
+            <div>
+              <div class="field-row">
+                <span class="field-label" title="Korelasyon engel eşiği (0-1)">Maks korelasyon</span>
+                <input id="correlation-max" class="input-field small" type="number" step="0.05" value="${strategy.correlation_max ?? 0.85}">
+              </div>
+              <div class="field-row">
+                <span class="field-label" title="MA50 üzerinde olması gereken min sektör sayısı (11 sektörden)">Min breadth sektör</span>
+                <input id="breadth-min-sectors" class="input-field small" type="number" value="${strategy.breadth_min_sectors ?? 4}">
+              </div>
+              <div class="field-row">
+                <span class="field-label" title="Kazanç raporundan kaç gün önce blok">Kazanç öncesi blok</span>
+                <input id="earnings-days-before" class="input-field small" type="number" value="${strategy.earnings_days_before ?? 5}">
+                <span style="color:var(--subtle);font-size:11px">gün</span>
+              </div>
+              <div class="field-row">
+                <span class="field-label" title="Kazanç raporundan kaç gün sonra blok">Kazanç sonrası blok</span>
+                <input id="earnings-days-after" class="input-field small" type="number" value="${strategy.earnings_days_after ?? 2}">
+                <span style="color:var(--subtle);font-size:11px">gün</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Save -->
         <div style="display:flex;justify-content:flex-end;align-items:center;gap:12px">
           <span id="save-status" style="color:var(--muted);font-size:12px"></span>
@@ -221,7 +269,10 @@ window.SettingsPage = {
     // Validate all numeric inputs before saving
     const numericIds = ['s-buy', 's-sell-0', 's-sell-1', 's-sell-2',
                         'c-buy', 'c-sell-0', 'c-sell-1', 'c-sell-2',
-                        'min-cash', 'max-exposure', 'drawdown-stop', 'cooldown', 'max-daily'];
+                        'min-cash', 'max-exposure', 'drawdown-stop', 'cooldown', 'max-daily',
+                        'adx-threshold', 'rs-threshold', 'technical-threshold',
+                        'correlation-max', 'breadth-min-sectors',
+                        'earnings-days-before', 'earnings-days-after'];
     for (const id of numericIds) {
       const val = parseFloat(document.getElementById(id).value);
       if (isNaN(val)) {
@@ -282,9 +333,17 @@ window.SettingsPage = {
       },
       strategy: {
         ...this._config.strategy,
-        drawdown_stop_pct: parseFloat(document.getElementById('drawdown-stop').value),
-        cooldown_hours: parseFloat(document.getElementById('cooldown').value),
-        max_daily_trades: parseInt(document.getElementById('max-daily').value, 10),
+        drawdown_stop_pct:     parseFloat(document.getElementById('drawdown-stop').value),
+        cooldown_hours:        parseFloat(document.getElementById('cooldown').value),
+        max_daily_trades:      parseInt(document.getElementById('max-daily').value, 10),
+        min_global_state:      document.getElementById('min-global-state').value,
+        adx_threshold:         parseFloat(document.getElementById('adx-threshold').value),
+        rs_threshold:          parseFloat(document.getElementById('rs-threshold').value),
+        technical_threshold:   parseFloat(document.getElementById('technical-threshold').value),
+        correlation_max:       parseFloat(document.getElementById('correlation-max').value),
+        breadth_min_sectors:   parseInt(document.getElementById('breadth-min-sectors').value, 10),
+        earnings_days_before:  parseInt(document.getElementById('earnings-days-before').value, 10),
+        earnings_days_after:   parseInt(document.getElementById('earnings-days-after').value, 10),
       }
     };
 
