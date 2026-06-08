@@ -298,10 +298,12 @@ async function runCycle() {
       console.warn('[RS] Benchmark fetch failed:', err.message);
     }
 
-    // 7. Per-symbol decision loop
+    // 7. Per-symbol decision loop (two-pass: exits first, then buys ranked by RS score)
     const assetReports = [];
+    const buyCandidates = [];
     let totalPnl = 0;
 
+    // Pass 1: compute indicators, execute exits, collect buy candidates
     for (const symbol of allSymbols) {
       const pos = state.positions[symbol] || { avg_cost: null, quantity: 0 };
       const currentPrice = prices[symbol] || 0;
@@ -330,7 +332,7 @@ async function runCycle() {
         rsScore = calcRelativeStrength(assetReturn, benchReturn);
       }
 
-      // c. Exit triggers (only for open positions)
+      // c. Exit triggers (only for open positions) — executed immediately, not deferred
       if ((pos.quantity || 0) > 0) {
         const exitResult = checkExitTrigger({
           pos, currentPrice, assetRegime,
@@ -338,7 +340,6 @@ async function runCycle() {
         });
 
         if (exitResult.exit) {
-          // Market hours check — skip sell for closed exchanges
           const market = isMarketOpen(symbol);
           if (!market.open && market.exchange !== 'CRYPTO') {
             assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: `Piyasa kapalı (çıkış ertelendi) — ${exitResult.reason}` });
@@ -377,7 +378,7 @@ async function runCycle() {
         failReason = `RS filtresi: ${rsScore?.toFixed(0) || '?'} < ${rsThreshold} (benchmark'ın gerisinde)`;
       }
 
-      // e. Pyramid decision (computed before risk check so L2/L3 buys also pass through risk)
+      // e. Pyramid decision
       const decision = decideMomentum({
         pyramidLevel,
         currentPrice,
@@ -387,34 +388,42 @@ async function runCycle() {
         filters: { allPass: allFiltersPass, failReason }
       });
 
-      // Risk check — applies to all buy actions including pyramid additions
+      if (decision.action === 'buy') {
+        // Defer buy — will be sorted by RS score before execution
+        buyCandidates.push({ symbol, pos, currentPrice, changePct, assetRegime, decision, rsScore: rsScore ?? 0 });
+      } else {
+        assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: decision.reason });
+      }
+    }
+
+    // Pass 2: execute buys ranked by RS score (strongest signal first)
+    buyCandidates.sort((a, b) => b.rsScore - a.rsScore);
+
+    for (const { symbol, pos, currentPrice, changePct, assetRegime, decision, rsScore } of buyCandidates) {
+      // Risk check — re-evaluated here so cash state reflects prior buys in this cycle
       const riskResult = check({
         symbol, action: decision.action,
         state, config, portfolioValue,
         assetValue: (pos.quantity || 0) * currentPrice
       });
 
-      if (!riskResult.approved && decision.action === 'buy') {
+      if (!riskResult.approved) {
         assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', blocked: true, reason: riskResult.reason });
         continue;
       }
 
-      if (decision.action === 'buy' && assetRegime.atr) {
-        const market = isMarketOpen(symbol);
-        if (!market.open && market.exchange !== 'CRYPTO') {
-          assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: `Piyasa kapalı — ${market.reason}` });
-          continue;
-        }
-
-        state = await executeBuy({
-          symbol, pos, tranche: decision.tranche,
-          reason: decision.reason, currentPrice,
-          atr: assetRegime.atr, state
-        });
-        assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'buy', reason: decision.reason });
-      } else {
-        assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: decision.reason });
+      const market = isMarketOpen(symbol);
+      if (!market.open && market.exchange !== 'CRYPTO') {
+        assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: `Piyasa kapalı — ${market.reason}` });
+        continue;
       }
+
+      state = await executeBuy({
+        symbol, pos, tranche: decision.tranche,
+        reason: decision.reason, currentPrice,
+        atr: assetRegime.atr, state
+      });
+      assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'buy', reason: `[RS:${rsScore.toFixed(0)}] ${decision.reason}` });
     }
 
     // 8. Save decisions for UI display
