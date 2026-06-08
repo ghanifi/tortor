@@ -119,6 +119,8 @@ const YAHOO_SYMBOL_MAP = {
   'ADA': 'ADA-USD',
   'SOL': 'SOL-USD',
   'DOT': 'DOT-USD',
+  'BNB': 'BNB-USD',
+  'AVAX': 'AVAX-USD',
   // London Stock Exchange (eToro suffix .L → Yahoo suffix .L)
   'RR.L': 'RR.L',
   'VOD.L': 'VOD.L',
