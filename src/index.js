@@ -308,10 +308,11 @@ async function runCycle() {
 
       const pnl = (pos.quantity || 0) > 0 ? calcPnL(pos.quantity, pos.avg_cost || currentPrice, currentPrice) : 0;
       totalPnl += pnl;
+      const changePct = (pos.quantity || 0) > 0 && pos.avg_cost ? ((currentPrice - pos.avg_cost) / pos.avg_cost) * 100 : null;
 
       const hist = historyMap[symbol];
       if (!hist || hist.closes.length < 14) {
-        assetReports.push({ symbol, price: currentPrice, action: 'hold', reason: 'Yeterli tarihsel veri yok' });
+        assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: 'Yeterli tarihsel veri yok' });
         continue;
       }
 
@@ -339,7 +340,7 @@ async function runCycle() {
           // Market hours check — skip sell for closed exchanges
           const market = isMarketOpen(symbol);
           if (!market.open && market.exchange !== 'CRYPTO') {
-            assetReports.push({ symbol, price: currentPrice, action: 'hold', reason: `Piyasa kapalı (çıkış ertelendi) — ${exitResult.reason}` });
+            assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: `Piyasa kapalı (çıkış ertelendi) — ${exitResult.reason}` });
             continue;
           }
 
@@ -347,7 +348,7 @@ async function runCycle() {
             symbol, pos, portion: exitResult.portion,
             reason: exitResult.reason, currentPrice, state
           });
-          assetReports.push({ symbol, price: currentPrice, action: 'sell', reason: exitResult.reason });
+          assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'sell', reason: exitResult.reason });
           continue;
         }
       }
@@ -393,14 +394,14 @@ async function runCycle() {
       });
 
       if (!riskResult.approved && decision.action === 'buy') {
-        assetReports.push({ symbol, price: currentPrice, action: 'hold', blocked: true, reason: riskResult.reason });
+        assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', blocked: true, reason: riskResult.reason });
         continue;
       }
 
       if (decision.action === 'buy' && assetRegime.atr) {
         const market = isMarketOpen(symbol);
         if (!market.open && market.exchange !== 'CRYPTO') {
-          assetReports.push({ symbol, price: currentPrice, action: 'hold', reason: `Piyasa kapalı — ${market.reason}` });
+          assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: `Piyasa kapalı — ${market.reason}` });
           continue;
         }
 
@@ -409,9 +410,9 @@ async function runCycle() {
           reason: decision.reason, currentPrice,
           atr: assetRegime.atr, state
         });
-        assetReports.push({ symbol, price: currentPrice, action: 'buy', reason: decision.reason });
+        assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'buy', reason: decision.reason });
       } else {
-        assetReports.push({ symbol, price: currentPrice, action: 'hold', reason: decision.reason });
+        assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: decision.reason });
       }
     }
 

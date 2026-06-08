@@ -21,7 +21,6 @@ class SlackNotifier {
   formatCheckReport({ layer, cash, portfolioValue, assets, totalPnl, totalPnlPct, aiUsage, risk }) {
     const time = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
     const assetLines = assets.map(a => {
-      const sign = a.change >= 0 ? '+' : '';
       let status = '⏳ bekle';
       if (a.action === 'buy') status = '🟢 ALINDI';
       else if (a.action === 'sell') status = '🔴 SATILDI';
@@ -29,7 +28,8 @@ class SlackNotifier {
       else if (a.blocked) status = `🚫 ${a.blockedReason}`;
       const reasonSuffix = a.reason ? `  ← ${a.reason}` : '';
       const fmt = (n) => n != null ? `$${Number(n).toFixed(2)}` : '-';
-      return `  ${a.symbol.padEnd(6)} ${fmt(a.price)}  avg ${fmt(a.avgCost)}  ${sign}${a.change.toFixed(1)}%  ${status}${reasonSuffix}`;
+      const changeStr = a.change != null ? `${a.change >= 0 ? '+' : ''}${a.change.toFixed(1)}%` : '-';
+      return `  ${a.symbol.padEnd(6)} ${fmt(a.price)}  avg ${fmt(a.avgCost)}  ${changeStr}  ${status}${reasonSuffix}`;
     }).join('\n');
 
     const pnlSign = totalPnl >= 0 ? '+' : '';
