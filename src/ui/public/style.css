@@ -168,8 +168,10 @@ td.right, th.right { text-align: right; }
   padding: 12px; height: 400px; overflow-y: auto; font-family: monospace; font-size: 11px;
   color: var(--muted); line-height: 1.5;
 }
-.log-line.error { color: var(--red); }
-.log-line.trade { color: var(--green); }
+.log-line.error  { color: var(--red); }
+.log-line.trade  { color: var(--green); font-weight: 600; }
+.log-line.cycle  { color: var(--accent); border-top: 1px solid var(--border); margin-top: 4px; padding-top: 4px; }
+.log-line.market { color: #a78bfa; }
 
 /* ── Login page ────────────────────────────────────────── */
 .login-body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }

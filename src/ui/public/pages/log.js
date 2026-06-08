@@ -34,9 +34,15 @@ window.LogPage = {
     es.onmessage = (e) => {
       const line = JSON.parse(e.data);
       const div = document.createElement('div');
+      const isError   = line.includes('[ERROR]') || line.toLowerCase().includes('error') || line.toLowerCase().includes('hata');
+      const isTrade   = line.includes('[Trade]') || line.includes('ALIŞ') || line.includes('SATIM') || line.includes('BUY') || line.includes('SELL');
+      const isCycle   = line.includes('Cycle start') || line.includes('[Bot] Starting');
+      const isMarket  = line.includes('[MarketState]') || line.includes('RISK_');
       div.className = 'log-line' +
-        (line.includes('[ERROR]') || line.toLowerCase().includes('error') ? ' error' : '') +
-        (line.includes('[Trade]') ? ' trade' : '');
+        (isError  ? ' error'  : '') +
+        (isTrade  ? ' trade'  : '') +
+        (isCycle  ? ' cycle'  : '') +
+        (isMarket ? ' market' : '');
       div.textContent = line;
       panel.appendChild(div);
       while (panel.children.length > 500) panel.removeChild(panel.firstChild);
