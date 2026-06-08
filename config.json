@@ -15,7 +15,7 @@
     "monthly_budget_usd": 10
   },
   "strategy": {
-    "active": "dca",
+    "active": "momentum",
     "check_interval_minutes": 10,
     "cooldown_hours": 2,
     "max_daily_trades": 10,
@@ -23,7 +23,14 @@
     "asset_classes": {
       "BTC": "crypto",
       "ETH": "crypto"
-    }
+    },
+    "pyramid_sizes": [0.4, 0.3, 0.3],
+    "atr_stop_multiplier": 2.0,
+    "atr_period": 14,
+    "adx_threshold": 20,
+    "rs_threshold": 70,
+    "min_global_state": "RISK_ON",
+    "market_state_cache_minutes": 60
   },
   "thresholds": {
     "stocks": {
