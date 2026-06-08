@@ -226,6 +226,19 @@ app.get('/api/logs', (req, res) => {
   req.on('close', () => clearInterval(interval));
 });
 
+// ── API: Decision log ────────────────────────────────────────────────────────
+app.get('/api/decisions', (req, res) => {
+  const DECISIONS_FILE = path.join(LOG_DIR, 'decisions.jsonl');
+  const limit = Math.min(parseInt(req.query.limit || '300', 10), 1000);
+  if (!fs.existsSync(DECISIONS_FILE)) return res.json([]);
+  const lines = fs.readFileSync(DECISIONS_FILE, 'utf8').trim().split('\n').filter(Boolean);
+  const records = lines.slice(-limit)
+    .map(l => { try { return JSON.parse(l); } catch { return null; } })
+    .filter(Boolean)
+    .reverse();
+  res.json(records);
+});
+
 // ── API: Trade history ───────────────────────────────────────────────────────
 app.get('/api/history', (req, res) => {
   if (!fs.existsSync(TRADES_LOG)) return res.json([]);

@@ -16,6 +16,7 @@ const { checkEarningsBlock } = require('./analysis/event-engine');
 const { getBreadthState } = require('./analysis/breadth');
 const { auditTrade } = require('./analysis/ai-auditor');
 const { canCallAI, recordCall } = require('./analysis/ai_budget');
+const { logDecision } = require('./analysis/decision-logger');
 const SlackNotifier = require('./slack');
 const { isMarketOpen } = require('./market-hours');
 const path = require('path');
@@ -341,6 +342,7 @@ async function runCycle() {
     }
 
     // 7. Per-symbol decision loop (two-pass: exits first, then buys ranked by RS score)
+    const cycleTs = new Date().toISOString();
     const assetReports = [];
     const buyCandidates = [];
     let totalPnl = 0;
@@ -378,6 +380,19 @@ async function runCycle() {
       const techResult = calcTechnicalScore(hist.closes, hist.highs, hist.lows, hist.volumes || []);
       const techScore = techResult.score;
 
+      // Shared decision data for logging (built up as we go)
+      const decisionData = {
+        cycleTs, symbol, price: currentPrice, changePct,
+        marketState: currentMarketState, marketScore,
+        breadthCount, breadthState,
+        trend: assetRegime.trend, adx: assetRegime.adx, atr: assetRegime.atr,
+        rsScore, techScore,
+        rsi: techResult.rsi, macdHistogram: techResult.macdHistogram,
+        volumeExpanding: techResult.volumeExpanding, atrExpanding: techResult.atrExpanding,
+        filters: {},
+        pyramidLevel: pos.pyramid_level || 0,
+      };
+
       // c. Exit triggers (only for open positions) — executed immediately, not deferred
       if ((pos.quantity || 0) > 0) {
         const exitResult = checkExitTrigger({
@@ -389,6 +404,7 @@ async function runCycle() {
           const market = isMarketOpen(symbol);
           if (!market.open && market.exchange !== 'CRYPTO') {
             assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: `Piyasa kapalı (çıkış ertelendi) — ${exitResult.reason}` });
+            logDecision({ ...decisionData, decision: 'hold', failReason: `Piyasa kapalı — ${exitResult.reason}` });
             continue;
           }
 
@@ -398,6 +414,7 @@ async function runCycle() {
             marketState: currentMarketState,
           });
           assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'sell', reason: exitResult.reason });
+          logDecision({ ...decisionData, decision: 'sell', failReason: null });
           continue;
         }
       }
@@ -410,36 +427,65 @@ async function runCycle() {
 
       let allFiltersPass = true;
       let failReason = null;
+      const filterLog = {};
 
       const minState = config.strategy?.min_global_state || 'RISK_ON';
       const breadthMin = config.strategy?.breadth_min_sectors ?? 4;
       if (currentMarketState !== minState) {
         allFiltersPass = false;
         failReason = `Market state: ${currentMarketState} (${minState} gerekli)`;
-      } else if (pyramidLevel === 0 && breadthCount < breadthMin) {
-        allFiltersPass = false;
-        failReason = `Breadth filtresi: ${breadthCount} sektör MA50 üzerinde (min ${breadthMin})`;
-
-      } else if (assetRegime.trend !== 'BULL') {
-        allFiltersPass = false;
-        failReason = `Regime filtresi: EMA/ADX koşulu sağlanmadı (trend: ${assetRegime.trend})`;
-      } else if (!assetRegime.adx || assetRegime.adx <= adxThreshold) {
-        allFiltersPass = false;
-        failReason = `Regime filtresi: ADX ${assetRegime.adx?.toFixed(1) || 'null'} ≤ ${adxThreshold}`;
-      } else if (rsScore === null || rsScore < rsThreshold) {
-        allFiltersPass = false;
-        failReason = `RS filtresi: ${rsScore?.toFixed(0) || '?'} < ${rsThreshold} (benchmark'ın gerisinde)`;
-      } else if (techScore < techThreshold) {
-        allFiltersPass = false;
-        failReason = `Teknik filtre: ${techScore} < ${techThreshold} (RSI/MACD/Volume/ATR zayıf)`;
-      } else if (pyramidLevel === 0) {
-        // Layer 5: Earnings filter — only blocks fresh entries (tranche 1)
-        const earningsDaysBefore = config.strategy?.earnings_days_before ?? 5;
-        const earningsDaysAfter  = config.strategy?.earnings_days_after  ?? 2;
-        const earningsResult = await checkEarningsBlock(symbol, { daysBefore: earningsDaysBefore, daysAfter: earningsDaysAfter });
-        if (earningsResult.blocked) {
+        filterLog.market_state = 'FAIL';
+      } else {
+        filterLog.market_state = 'PASS';
+        if (pyramidLevel === 0 && breadthCount < breadthMin) {
           allFiltersPass = false;
-          failReason = earningsResult.reason;
+          failReason = `Breadth filtresi: ${breadthCount} sektör MA50 üzerinde (min ${breadthMin})`;
+          filterLog.breadth = 'FAIL';
+        } else {
+          filterLog.breadth = pyramidLevel === 0 ? 'PASS' : 'SKIP';
+          if (assetRegime.trend !== 'BULL') {
+            allFiltersPass = false;
+            failReason = `Regime filtresi: EMA/ADX koşulu sağlanmadı (trend: ${assetRegime.trend})`;
+            filterLog.trend = 'FAIL';
+          } else {
+            filterLog.trend = 'PASS';
+            if (!assetRegime.adx || assetRegime.adx <= adxThreshold) {
+              allFiltersPass = false;
+              failReason = `Regime filtresi: ADX ${assetRegime.adx?.toFixed(1) || 'null'} ≤ ${adxThreshold}`;
+              filterLog.adx = 'FAIL';
+            } else {
+              filterLog.adx = 'PASS';
+              if (rsScore === null || rsScore < rsThreshold) {
+                allFiltersPass = false;
+                failReason = `RS filtresi: ${rsScore?.toFixed(0) || '?'} < ${rsThreshold} (benchmark'ın gerisinde)`;
+                filterLog.rs_score = 'FAIL';
+              } else {
+                filterLog.rs_score = 'PASS';
+                if (techScore < techThreshold) {
+                  allFiltersPass = false;
+                  failReason = `Teknik filtre: ${techScore} < ${techThreshold} (RSI/MACD/Volume/ATR zayıf)`;
+                  filterLog.tech_score = 'FAIL';
+                } else {
+                  filterLog.tech_score = 'PASS';
+                  if (pyramidLevel === 0) {
+                    // Layer 5: Earnings filter
+                    const earningsDaysBefore = config.strategy?.earnings_days_before ?? 5;
+                    const earningsDaysAfter  = config.strategy?.earnings_days_after  ?? 2;
+                    const earningsResult = await checkEarningsBlock(symbol, { daysBefore: earningsDaysBefore, daysAfter: earningsDaysAfter });
+                    if (earningsResult.blocked) {
+                      allFiltersPass = false;
+                      failReason = earningsResult.reason;
+                      filterLog.earnings = 'FAIL';
+                    } else {
+                      filterLog.earnings = 'PASS';
+                    }
+                  } else {
+                    filterLog.earnings = 'SKIP';
+                  }
+                }
+              }
+            }
+          }
         }
       }
 
@@ -455,9 +501,10 @@ async function runCycle() {
 
       if (decision.action === 'buy') {
         // Defer buy — will be sorted by RS score before execution
-        buyCandidates.push({ symbol, pos, currentPrice, changePct, assetRegime, decision, rsScore: rsScore ?? 0, techScore, marketScore });
+        buyCandidates.push({ symbol, pos, currentPrice, changePct, assetRegime, decision, rsScore: rsScore ?? 0, techScore, techResult, marketScore, filterLog, decisionData });
       } else {
         assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: decision.reason });
+        logDecision({ ...decisionData, filters: filterLog, decision: 'hold', failReason: decision.reason });
       }
     }
 
@@ -466,16 +513,20 @@ async function runCycle() {
 
     const corrMax = config.strategy?.correlation_max ?? 0.85;
 
-    for (const { symbol, pos, currentPrice, changePct, assetRegime, decision, rsScore, techScore, marketScore } of buyCandidates) {
+    for (const { symbol, pos, currentPrice, changePct, assetRegime, decision, rsScore, techScore, techResult, marketScore, filterLog, decisionData } of buyCandidates) {
       // Correlation check (Layer 7) — only for new entries (tranche 1), not pyramid additions
       if (decision.tranche === 1) {
         const corrResult = checkCorrelation(historyMap[symbol]?.closes || [], state.positions, historyMap, corrMax);
         if (corrResult.blocked) {
-          assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: `Korelasyon filtresi: ${corrResult.with} ile r=${corrResult.correlation.toFixed(2)}` });
+          const reason = `Korelasyon filtresi: ${corrResult.with} ile r=${corrResult.correlation.toFixed(2)}`;
+          assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason });
+          logDecision({ ...decisionData, filters: { ...filterLog, correlation: 'FAIL' }, decision: 'hold', failReason: reason });
           continue;
         }
+        filterLog.correlation = 'PASS';
 
         // AI Auditor (Layer 14) — final gate for new entries
+        let aiVerdict = null, aiReason = null;
         const aiCheck = canCallAI(state);
         if (aiCheck.allowed) {
           try {
@@ -494,17 +545,27 @@ async function runCycle() {
               model: config.ai?.model || 'claude-haiku-4-5-20251001',
             });
             state = recordCall(state, audit.costUsd);
+            aiVerdict = audit.verdict;
+            aiReason  = audit.reason;
             if (audit.verdict === 'SKIP') {
-              assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: `AI Denetçi: ${audit.reason}` });
+              const reason = `AI Denetçi: ${audit.reason}`;
+              assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason });
+              logDecision({ ...decisionData, filters: { ...filterLog, ai_audit: 'FAIL' }, decision: 'hold', failReason: reason, aiVerdict, aiReason });
               continue;
             }
+            filterLog.ai_audit = 'PASS';
             console.log(`[AI Auditor] ${symbol}: BUY — ${audit.reason}`);
           } catch (err) {
             console.warn(`[AI Auditor] ${symbol} denetim başarısız, devam ediliyor:`, err.message);
+            filterLog.ai_audit = 'SKIP';
           }
         } else {
+          filterLog.ai_audit = 'SKIP';
           console.log(`[AI Auditor] ${symbol}: atlandı — ${aiCheck.reason}`);
         }
+      } else {
+        filterLog.correlation = 'SKIP';
+        filterLog.ai_audit    = 'SKIP';
       }
 
       // Risk check — re-evaluated here so cash state reflects prior buys in this cycle
@@ -516,12 +577,15 @@ async function runCycle() {
 
       if (!riskResult.approved) {
         assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', blocked: true, reason: riskResult.reason });
+        logDecision({ ...decisionData, filters: filterLog, decision: 'hold', failReason: riskResult.reason });
         continue;
       }
 
       const market = isMarketOpen(symbol);
       if (!market.open && market.exchange !== 'CRYPTO') {
-        assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: `Piyasa kapalı — ${market.reason}` });
+        const reason = `Piyasa kapalı — ${market.reason}`;
+        assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason });
+        logDecision({ ...decisionData, filters: filterLog, decision: 'hold', failReason: reason });
         continue;
       }
 
@@ -541,6 +605,7 @@ async function runCycle() {
         },
       });
       assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'buy', reason: `[RS:${rsScore.toFixed(0)}] ${decision.reason}` });
+      logDecision({ ...decisionData, filters: filterLog, decision: 'buy', tranche: decision.tranche, failReason: null });
     }
 
     // 8. Save decisions for UI display
