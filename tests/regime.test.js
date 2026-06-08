@@ -1,4 +1,4 @@
-const { detectEquityRegime, detectCryptoRegime, detectAssetRegime, applyRegimeAdjustments, sma } = require('../src/analysis/regime');
+const { detectEquityRegime, detectCryptoRegime, detectAssetRegime, detectAssetRegimeV3, applyRegimeAdjustments, sma } = require('../src/analysis/regime');
 
 describe('sma', () => {
   test('returns null if not enough values', () => {
@@ -65,5 +65,34 @@ describe('applyRegimeAdjustments', () => {
     const result = applyRegimeAdjustments(baseThresholds, 'bull', 'bull', 'stocks', { trend: 'bull' });
     expect(result.thresholds.buy).toBe(baseThresholds.buy);
     expect(result.budgetMultiplier).toBe(1.0);
+  });
+});
+
+describe('detectAssetRegimeV3', () => {
+  const closes200 = Array.from({ length: 200 }, (_, i) => 100 + i * 0.5); // slowly rising
+  const highs200  = closes200.map(v => v + 2);
+  const lows200   = closes200.map(v => v - 2);
+
+  test('returns trend, adx, atr', () => {
+    const result = detectAssetRegimeV3(closes200, highs200, lows200);
+    expect(result).toHaveProperty('trend');
+    expect(result).toHaveProperty('adx');
+    expect(result).toHaveProperty('atr');
+  });
+
+  test('strongly trending-up data → BULL trend', () => {
+    const result = detectAssetRegimeV3(closes200, highs200, lows200);
+    expect(result.trend).toBe('BULL');
+  });
+
+  test('returns SIDEWAYS with insufficient data', () => {
+    const short = closes200.slice(0, 10);
+    const result = detectAssetRegimeV3(short, short.map(v => v + 2), short.map(v => v - 2));
+    expect(result.trend).toBe('SIDEWAYS');
+  });
+
+  test('atr is a positive number', () => {
+    const result = detectAssetRegimeV3(closes200, highs200, lows200);
+    expect(result.atr).toBeGreaterThan(0);
   });
 });

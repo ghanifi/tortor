@@ -1,6 +1,7 @@
 // src/analysis/regime.js
 const axios = require('axios');
 const https = require('https');
+const { calculateADX, calculateATR, calculateEMA } = require('./indicators');
 
 // Bypass SSL inspection proxy that presents self-signed certs
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
@@ -90,6 +91,23 @@ function applyRegimeAdjustments(baseThresholds, macroEquity, macroCrypto, assetC
   }
 
   return { thresholds, budgetMultiplier };
+}
+
+function detectAssetRegimeV3(closes, highs, lows) {
+  if (closes.length < 14) return { trend: 'SIDEWAYS', adx: null, atr: null };
+
+  const ema50  = calculateEMA(closes, 50);
+  const ema200 = calculateEMA(closes, 200);
+
+  let trend;
+  if (ema50 && ema200 && ema50 > ema200)      trend = 'BULL';
+  else if (ema50 && ema200 && ema50 < ema200) trend = 'BEAR';
+  else                                         trend = 'SIDEWAYS';
+
+  const adx = calculateADX(highs, lows, closes);
+  const atr = calculateATR(highs, lows, closes);
+
+  return { trend, adx, atr };
 }
 
 // Yahoo Finance symbol overrides for non-standard tickers
@@ -184,5 +202,6 @@ module.exports = {
   detectEquityRegime,
   detectCryptoRegime,
   detectAssetRegime,
+  detectAssetRegimeV3,
   applyRegimeAdjustments
 };
