@@ -17,6 +17,7 @@ const { getBreadthState } = require('./analysis/breadth');
 const { auditTrade } = require('./analysis/ai-auditor');
 const { canCallAI, recordCall } = require('./analysis/ai_budget');
 const { logDecision } = require('./analysis/decision-logger');
+const { calcFinalScore, scoreToTier } = require('./analysis/final-score');
 const SlackNotifier = require('./slack');
 const { isMarketOpen } = require('./market-hours');
 const path = require('path');
@@ -102,9 +103,13 @@ async function executeSell({ symbol, pos, portion, reason, currentPrice, state, 
   return state;
 }
 
-async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, state, scores }) {
+async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, state, scores, strongBuy }) {
   const sizes           = config.strategy?.pyramid_sizes        || [0.4, 0.3, 0.3];
-  const trancheSize     = sizes[tranche - 1]                    || 0.33;
+  const baseSize        = sizes[tranche - 1]                    || 0.33;
+  // Strong Buy: L1 tranche gets 25% larger (capped at 0.6)
+  const trancheSize     = (strongBuy && tranche === 1)
+    ? Math.min(0.6, baseSize * 1.25)
+    : baseSize;
   const atrMult         = config.strategy?.atr_stop_multiplier  || 2.0;
   const riskPerTradePct = config.strategy?.risk_per_trade_pct   ?? 0.75;
   const minReserve      = config.safety?.min_cash_reserve       || 0;
@@ -420,70 +425,69 @@ async function runCycle() {
       }
 
       // d. Entry filters
-      const pyramidLevel = pos.pyramid_level || 0;
-      const adxThreshold  = config.strategy?.adx_threshold    || 20;
-      const rsThreshold   = config.strategy?.rs_threshold      || 70;
-      const techThreshold = config.strategy?.technical_threshold || 65;
+      const pyramidLevel  = pos.pyramid_level || 0;
+      const adxThreshold  = config.strategy?.adx_threshold     || 20;
+      const entryScore    = config.strategy?.entry_score        ?? 70;
+      const strongScore   = config.strategy?.strong_buy_score   ?? 85;
 
       let allFiltersPass = true;
       let failReason = null;
       const filterLog = {};
 
+      // ── Hard gates (binary — override score) ────────────────────────────────
       const minState = config.strategy?.min_global_state || 'RISK_ON';
-      const breadthMin = config.strategy?.breadth_min_sectors ?? 4;
       if (currentMarketState !== minState) {
         allFiltersPass = false;
         failReason = `Market state: ${currentMarketState} (${minState} gerekli)`;
         filterLog.market_state = 'FAIL';
       } else {
         filterLog.market_state = 'PASS';
-        if (pyramidLevel === 0 && breadthCount < breadthMin) {
+        if (assetRegime.trend !== 'BULL') {
           allFiltersPass = false;
-          failReason = `Breadth filtresi: ${breadthCount} sektör MA50 üzerinde (min ${breadthMin})`;
-          filterLog.breadth = 'FAIL';
+          failReason = `Trend filtresi: ${assetRegime.trend} (BULL gerekli)`;
+          filterLog.trend = 'FAIL';
         } else {
-          filterLog.breadth = pyramidLevel === 0 ? 'PASS' : 'SKIP';
-          if (assetRegime.trend !== 'BULL') {
+          filterLog.trend = 'PASS';
+          if (!assetRegime.adx || assetRegime.adx <= adxThreshold) {
             allFiltersPass = false;
-            failReason = `Regime filtresi: EMA/ADX koşulu sağlanmadı (trend: ${assetRegime.trend})`;
-            filterLog.trend = 'FAIL';
+            failReason = `ADX filtresi: ${assetRegime.adx?.toFixed(1) || 'null'} ≤ ${adxThreshold} (trend gücü yetersiz)`;
+            filterLog.adx = 'FAIL';
           } else {
-            filterLog.trend = 'PASS';
-            if (!assetRegime.adx || assetRegime.adx <= adxThreshold) {
+            filterLog.adx = 'PASS';
+
+            // ── Final Score gate (replaces individual RS / Tech / Breadth thresholds) ──
+            const finalScore = calcFinalScore({
+              rsScore, techScore, marketScore,
+              breadthCount, adx: assetRegime.adx, adxMin: adxThreshold,
+            });
+            const tier = scoreToTier(finalScore, entryScore, strongScore);
+
+            if (tier === 'NO_ENTRY') {
               allFiltersPass = false;
-              failReason = `Regime filtresi: ADX ${assetRegime.adx?.toFixed(1) || 'null'} ≤ ${adxThreshold}`;
-              filterLog.adx = 'FAIL';
+              failReason = `Final skor: ${finalScore} < ${entryScore} (RS:${rsScore?.toFixed(0) ?? '?'} Tek:${techScore} Mkt:${marketScore} Breadth:${breadthCount}/11)`;
+              filterLog.final_score = 'FAIL';
             } else {
-              filterLog.adx = 'PASS';
-              if (rsScore === null || rsScore < rsThreshold) {
-                allFiltersPass = false;
-                failReason = `RS filtresi: ${rsScore?.toFixed(0) || '?'} < ${rsThreshold} (benchmark'ın gerisinde)`;
-                filterLog.rs_score = 'FAIL';
-              } else {
-                filterLog.rs_score = 'PASS';
-                if (techScore < techThreshold) {
+              filterLog.final_score = tier; // 'BUY' or 'STRONG_BUY'
+
+              // Layer 5: Earnings filter — only for new entries
+              if (pyramidLevel === 0) {
+                const earningsDaysBefore = config.strategy?.earnings_days_before ?? 5;
+                const earningsDaysAfter  = config.strategy?.earnings_days_after  ?? 2;
+                const earningsResult = await checkEarningsBlock(symbol, { daysBefore: earningsDaysBefore, daysAfter: earningsDaysAfter });
+                if (earningsResult.blocked) {
                   allFiltersPass = false;
-                  failReason = `Teknik filtre: ${techScore} < ${techThreshold} (RSI/MACD/Volume/ATR zayıf)`;
-                  filterLog.tech_score = 'FAIL';
+                  failReason = earningsResult.reason;
+                  filterLog.earnings = 'FAIL';
                 } else {
-                  filterLog.tech_score = 'PASS';
-                  if (pyramidLevel === 0) {
-                    // Layer 5: Earnings filter
-                    const earningsDaysBefore = config.strategy?.earnings_days_before ?? 5;
-                    const earningsDaysAfter  = config.strategy?.earnings_days_after  ?? 2;
-                    const earningsResult = await checkEarningsBlock(symbol, { daysBefore: earningsDaysBefore, daysAfter: earningsDaysAfter });
-                    if (earningsResult.blocked) {
-                      allFiltersPass = false;
-                      failReason = earningsResult.reason;
-                      filterLog.earnings = 'FAIL';
-                    } else {
-                      filterLog.earnings = 'PASS';
-                    }
-                  } else {
-                    filterLog.earnings = 'SKIP';
-                  }
+                  filterLog.earnings = 'PASS';
                 }
+              } else {
+                filterLog.earnings = 'SKIP';
               }
+
+              // Store tier on decisionData so executeBuy can use it
+              decisionData.finalScore = finalScore;
+              decisionData.tier = tier;
             }
           }
         }
@@ -501,7 +505,7 @@ async function runCycle() {
 
       if (decision.action === 'buy') {
         // Defer buy — will be sorted by RS score before execution
-        buyCandidates.push({ symbol, pos, currentPrice, changePct, assetRegime, decision, rsScore: rsScore ?? 0, techScore, techResult, marketScore, filterLog, decisionData });
+        buyCandidates.push({ symbol, pos, currentPrice, changePct, assetRegime, decision, rsScore: rsScore ?? 0, techScore, techResult, marketScore, filterLog, decisionData, tier: decisionData.tier });
       } else {
         assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: decision.reason });
         logDecision({ ...decisionData, filters: filterLog, decision: 'hold', failReason: decision.reason });
@@ -513,7 +517,7 @@ async function runCycle() {
 
     const corrMax = config.strategy?.correlation_max ?? 0.85;
 
-    for (const { symbol, pos, currentPrice, changePct, assetRegime, decision, rsScore, techScore, techResult, marketScore, filterLog, decisionData } of buyCandidates) {
+    for (const { symbol, pos, currentPrice, changePct, assetRegime, decision, rsScore, techScore, techResult, marketScore, filterLog, decisionData, tier } of buyCandidates) {
       // Correlation check (Layer 7) — only for new entries (tranche 1), not pyramid additions
       if (decision.tranche === 1) {
         const corrResult = checkCorrelation(historyMap[symbol]?.closes || [], state.positions, historyMap, corrMax);
@@ -589,10 +593,15 @@ async function runCycle() {
         continue;
       }
 
+      const buyReason = tier === 'STRONG_BUY'
+        ? `[STRONG BUY:${decisionData.finalScore}] ${decision.reason}`
+        : `[Score:${decisionData.finalScore}] ${decision.reason}`;
+
       state = await executeBuy({
         symbol, pos, tranche: decision.tranche,
-        reason: decision.reason, currentPrice,
+        reason: buyReason, currentPrice,
         atr: assetRegime.atr, state,
+        strongBuy: tier === 'STRONG_BUY',
         scores: {
           market_state:  currentMarketState,
           market_score:  marketScore,
@@ -604,7 +613,7 @@ async function runCycle() {
           pyramid_level: decision.tranche,
         },
       });
-      assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'buy', reason: `[RS:${rsScore.toFixed(0)}] ${decision.reason}` });
+      assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'buy', reason: buyReason });
       logDecision({ ...decisionData, filters: filterLog, decision: 'buy', tranche: decision.tranche, failReason: null });
     }
 

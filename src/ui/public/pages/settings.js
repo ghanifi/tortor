@@ -36,54 +36,25 @@ window.SettingsPage = {
           </div>
         </div>
 
-        <!-- Thresholds -->
+        <!-- Final Score -->
         <div class="card" style="margin-bottom:16px">
-          <div class="card-title">📉 Eşikler (Thresholds)</div>
+          <div class="card-title">🎯 Final Skor</div>
+          <div style="color:var(--muted);font-size:11px;margin-bottom:12px">
+            RS(%30) + Teknik(%25) + Piyasa(%20) + Breadth(%15) + ADX(%10) → 0–100
+          </div>
           <div class="grid-2">
             <div>
-              <div class="section-label">Hisseler</div>
-              <div class="threshold-row">
-                <span class="threshold-name">Alım eşiği</span>
-                <input id="s-buy" class="input-field small" value="${s.buy}">
-                <span class="threshold-unit">%</span>
-              </div>
-              <div class="threshold-row">
-                <span class="threshold-name">Satış T1</span>
-                <input id="s-sell-0" class="input-field small" value="${s.sell?.[0] ?? 7}">
-                <span class="threshold-unit">%</span>
-              </div>
-              <div class="threshold-row">
-                <span class="threshold-name">Satış T2</span>
-                <input id="s-sell-1" class="input-field small" value="${s.sell?.[1] ?? 10}">
-                <span class="threshold-unit">%</span>
-              </div>
-              <div class="threshold-row">
-                <span class="threshold-name">Satış T3</span>
-                <input id="s-sell-2" class="input-field small" value="${s.sell?.[2] ?? 13}">
-                <span class="threshold-unit">%</span>
+              <div class="field-row">
+                <span class="field-label" title="Bu skoru geçen semboller alınır">Alım eşiği</span>
+                <input id="entry-score" class="input-field small" type="number" value="${strategy.entry_score ?? 70}">
+                <span style="color:var(--subtle);font-size:11px">/100</span>
               </div>
             </div>
             <div>
-              <div class="section-label">Kripto</div>
-              <div class="threshold-row">
-                <span class="threshold-name">Alım eşiği</span>
-                <input id="c-buy" class="input-field small" value="${c.buy}">
-                <span class="threshold-unit">%</span>
-              </div>
-              <div class="threshold-row">
-                <span class="threshold-name">Satış T1</span>
-                <input id="c-sell-0" class="input-field small" value="${c.sell?.[0] ?? 10}">
-                <span class="threshold-unit">%</span>
-              </div>
-              <div class="threshold-row">
-                <span class="threshold-name">Satış T2</span>
-                <input id="c-sell-1" class="input-field small" value="${c.sell?.[1] ?? 15}">
-                <span class="threshold-unit">%</span>
-              </div>
-              <div class="threshold-row">
-                <span class="threshold-name">Satış T3</span>
-                <input id="c-sell-2" class="input-field small" value="${c.sell?.[2] ?? 20}">
-                <span class="threshold-unit">%</span>
+              <div class="field-row">
+                <span class="field-label" title="Bu skoru geçen semboller daha büyük pozisyonla alınır">Strong Buy eşiği</span>
+                <input id="strong-buy-score" class="input-field small" type="number" value="${strategy.strong_buy_score ?? 85}">
+                <span style="color:var(--subtle);font-size:11px">/100</span>
               </div>
             </div>
           </div>
@@ -267,11 +238,9 @@ window.SettingsPage = {
     const statusEl = document.getElementById('save-status');
 
     // Validate all numeric inputs before saving
-    const numericIds = ['s-buy', 's-sell-0', 's-sell-1', 's-sell-2',
-                        'c-buy', 'c-sell-0', 'c-sell-1', 'c-sell-2',
+    const numericIds = ['entry-score', 'strong-buy-score',
                         'min-cash', 'max-exposure', 'drawdown-stop', 'cooldown', 'max-daily',
-                        'adx-threshold', 'rs-threshold', 'technical-threshold',
-                        'correlation-max', 'breadth-min-sectors',
+                        'adx-threshold', 'correlation-max', 'breadth-min-sectors',
                         'earnings-days-before', 'earnings-days-after'];
     for (const id of numericIds) {
       const val = parseFloat(document.getElementById(id).value);
@@ -299,24 +268,6 @@ window.SettingsPage = {
 
     const updates = {
       watchlist: this._config.watchlist,
-      thresholds: {
-        stocks: {
-          buy: parseFloat(document.getElementById('s-buy').value),
-          sell: [
-            parseFloat(document.getElementById('s-sell-0').value),
-            parseFloat(document.getElementById('s-sell-1').value),
-            parseFloat(document.getElementById('s-sell-2').value),
-          ]
-        },
-        crypto: {
-          buy: parseFloat(document.getElementById('c-buy').value),
-          sell: [
-            parseFloat(document.getElementById('c-sell-0').value),
-            parseFloat(document.getElementById('c-sell-1').value),
-            parseFloat(document.getElementById('c-sell-2').value),
-          ]
-        }
-      },
       safety: {
         ...freshConfig.safety,
         min_cash_reserve: parseFloat(document.getElementById('min-cash').value),
@@ -333,13 +284,13 @@ window.SettingsPage = {
       },
       strategy: {
         ...this._config.strategy,
+        entry_score:           parseFloat(document.getElementById('entry-score').value),
+        strong_buy_score:      parseFloat(document.getElementById('strong-buy-score').value),
         drawdown_stop_pct:     parseFloat(document.getElementById('drawdown-stop').value),
         cooldown_hours:        parseFloat(document.getElementById('cooldown').value),
         max_daily_trades:      parseInt(document.getElementById('max-daily').value, 10),
         min_global_state:      document.getElementById('min-global-state').value,
         adx_threshold:         parseFloat(document.getElementById('adx-threshold').value),
-        rs_threshold:          parseFloat(document.getElementById('rs-threshold').value),
-        technical_threshold:   parseFloat(document.getElementById('technical-threshold').value),
         correlation_max:       parseFloat(document.getElementById('correlation-max').value),
         breadth_min_sectors:   parseInt(document.getElementById('breadth-min-sectors').value, 10),
         earnings_days_before:  parseInt(document.getElementById('earnings-days-before').value, 10),
