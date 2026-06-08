@@ -9,7 +9,8 @@
     "start:bot": "node src/index.js",
     "start:ui": "node src/ui/server.js",
     "test": "jest --coverage --passWithNoTests",
-    "encrypt": "node scripts/encrypt-password.js"
+    "encrypt": "node scripts/encrypt-password.js",
+    "backtest": "node scripts/backtest.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.40.0",
