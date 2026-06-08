@@ -1,0 +1,12 @@
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      # Persist runtime data across deployments
+      - ./state.json:/app/state.json
+      - ./logs:/app/logs
+      # Config editable on host without rebuild
+      - ./config.json:/app/config.json
