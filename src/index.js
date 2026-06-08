@@ -11,6 +11,7 @@ const { calcTechnicalScore } = require('./analysis/technical-score');
 const { checkCorrelation } = require('./analysis/correlation');
 const { check, updateAfterTrade, checkDrawdown, resetDailyCounters } = require('./risk');
 const { calcPnL, calcTotalPortfolioValue, allocateBudget, calcPositionBudget } = require('./portfolio');
+const { logEntry, logExit } = require('./analysis/data-lake');
 const SlackNotifier = require('./slack');
 const { isMarketOpen } = require('./market-hours');
 const path = require('path');
@@ -32,7 +33,7 @@ function calcNewAvgCost(existingQty, existingAvg, newQty, newPrice) {
   return ((existingQty * (existingAvg || newPrice)) + (newQty * newPrice)) / total;
 }
 
-async function executeSell({ symbol, pos, portion, reason, currentPrice, state }) {
+async function executeSell({ symbol, pos, portion, reason, currentPrice, state, marketState }) {
   const sellQty = (pos.quantity || 0) * portion;
   const proceeds = sellQty * currentPrice;
   const pnlThisSell = sellQty * (currentPrice - (pos.avg_cost || currentPrice));
@@ -83,6 +84,9 @@ async function executeSell({ symbol, pos, portion, reason, currentPrice, state }
     });
     fs.appendFileSync(path.join(LOG_DIR, 'trades.jsonl'), tradeEntry + '\n');
 
+    const pnlPct = pos.avg_cost ? ((currentPrice - pos.avg_cost) / pos.avg_cost) * 100 : 0;
+    logExit({ symbol, price: currentPrice, qty: sellQty, proceeds, pnl: pnlThisSell, pnlPct, reason, marketState: marketState || null });
+
     if (config.safety?.dry_run) {
       console.log(`[DRY RUN] SELL ${symbol} ${(portion * 100).toFixed(0)}%: ${reason}`);
     }
@@ -93,7 +97,7 @@ async function executeSell({ symbol, pos, portion, reason, currentPrice, state }
   return state;
 }
 
-async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, state }) {
+async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, state, scores }) {
   const sizes           = config.strategy?.pyramid_sizes        || [0.4, 0.3, 0.3];
   const trancheSize     = sizes[tranche - 1]                    || 0.33;
   const atrMult         = config.strategy?.atr_stop_multiplier  || 2.0;
@@ -168,6 +172,10 @@ async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, sta
     });
     fs.appendFileSync(path.join(LOG_DIR, 'trades.jsonl'), tradeEntry + '\n');
 
+    logEntry({ symbol, tranche, price: currentPrice, qty, amount: budget,
+      stopPrice: state.positions[symbol]?.stop_price ?? null,
+      reason, scores: scores || {} });
+
     if (config.safety?.dry_run) {
       console.log(`[DRY RUN] BUY ${symbol} L${tranche} $${budget.toFixed(2)}: ${reason}`);
     }
@@ -228,7 +236,7 @@ async function runCycle() {
         const pos = state.positions[sym];
         const price = prices[sym] || pos.avg_cost || 0;
         if (price > 0) {
-          state = await executeSell({ symbol: sym, pos, portion: 1, reason: 'Market state: PANIC — acil çıkış', currentPrice: price, state });
+          state = await executeSell({ symbol: sym, pos, portion: 1, reason: 'Market state: PANIC — acil çıkış', currentPrice: price, state, marketState: 'PANIC' });
         } else {
           console.error(`[PANIC] ${sym} satılamadı — fiyat verisi yok, manuel müdahale gerekli`);
           try {
@@ -366,7 +374,8 @@ async function runCycle() {
 
           state = await executeSell({
             symbol, pos, portion: exitResult.portion,
-            reason: exitResult.reason, currentPrice, state
+            reason: exitResult.reason, currentPrice, state,
+            marketState: currentMarketState,
           });
           assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'sell', reason: exitResult.reason });
           continue;
@@ -412,7 +421,7 @@ async function runCycle() {
 
       if (decision.action === 'buy') {
         // Defer buy — will be sorted by RS score before execution
-        buyCandidates.push({ symbol, pos, currentPrice, changePct, assetRegime, decision, rsScore: rsScore ?? 0 });
+        buyCandidates.push({ symbol, pos, currentPrice, changePct, assetRegime, decision, rsScore: rsScore ?? 0, techScore, marketScore });
       } else {
         assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: decision.reason });
       }
@@ -423,7 +432,7 @@ async function runCycle() {
 
     const corrMax = config.strategy?.correlation_max ?? 0.85;
 
-    for (const { symbol, pos, currentPrice, changePct, assetRegime, decision, rsScore } of buyCandidates) {
+    for (const { symbol, pos, currentPrice, changePct, assetRegime, decision, rsScore, techScore, marketScore } of buyCandidates) {
       // Correlation check (Layer 7) — only for new entries (tranche 1), not pyramid additions
       if (decision.tranche === 1) {
         const corrResult = checkCorrelation(historyMap[symbol]?.closes || [], state.positions, historyMap, corrMax);
@@ -454,7 +463,17 @@ async function runCycle() {
       state = await executeBuy({
         symbol, pos, tranche: decision.tranche,
         reason: decision.reason, currentPrice,
-        atr: assetRegime.atr, state
+        atr: assetRegime.atr, state,
+        scores: {
+          market_state:  currentMarketState,
+          market_score:  marketScore,
+          trend:         assetRegime.trend,
+          adx:           assetRegime.adx,
+          atr:           assetRegime.atr,
+          rs_score:      rsScore,
+          tech_score:    techScore,
+          pyramid_level: decision.tranche,
+        },
       });
       assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'buy', reason: `[RS:${rsScore.toFixed(0)}] ${decision.reason}` });
     }

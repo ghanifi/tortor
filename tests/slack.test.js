@@ -14,7 +14,7 @@ describe('SlackNotifier.formatCheckReport', () => {
       aiUsage: { dailyCalls: 5, dailyLimit: 20, monthlyCost: 1, monthlyBudget: 10 },
       risk: { macroEquity: 'bull', macroCrypto: 'bear', paused: false, dailyTrades: 2, maxDailyTrades: 10 }
     });
-    expect(msg).toContain('HTTP API (Katman 1)');
+    expect(msg).toContain('Bağlantı: 1');
     expect(msg).toContain('$1000.00');
     expect(msg).toContain('5/20');
   });
