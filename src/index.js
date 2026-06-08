@@ -3,18 +3,17 @@ const cron = require('node-cron');
 const { loadConfig } = require('./config');
 const { loadState, saveState } = require('./state');
 const EToroClient = require('./etoro/client');
-const { analyzeSignals } = require('./analysis/indicators');
-const { loadResearchSignals } = require('./analysis/research');
-const { fetchSP500History, fetchBTCDominanceHistory, fetchSymbolPrices, fetchSymbolHistories, detectEquityRegime, detectCryptoRegime, detectAssetRegime, applyRegimeAdjustments } = require('./analysis/regime');
-const { decide, calcNewAvgCost } = require('./strategies/dca');
-const { canCallAI, recordCall, shouldWarnBudget } = require('./analysis/ai_budget');
-const { analyzeChart } = require('./analysis/ai_chart');
+const { fetchSymbolPrices, fetchSymbolHistories, detectAssetRegimeV3 } = require('./analysis/regime');
+const { getMarketState } = require('./analysis/market-state');
+const { calcRelativeStrength, fetchBenchmarkReturns, getExchangeBenchmark } = require('./analysis/relative-strength');
+const { decideMomentum, checkExitTrigger } = require('./strategies/momentum');
 const { check, updateAfterTrade, checkDrawdown, resetDailyCounters } = require('./risk');
-const { calcChange, calcPnL, calcTotalPortfolioValue, allocateBudget } = require('./portfolio');
+const { calcPnL, calcTotalPortfolioValue, allocateBudget } = require('./portfolio');
 const SlackNotifier = require('./slack');
+const { isMarketOpen } = require('./market-hours');
 const path = require('path');
 const fs = require('fs');
-const { isMarketOpen } = require('./market-hours');
+
 const LOG_DIR = path.join(process.cwd(), 'logs');
 
 let config = null;
@@ -22,32 +21,203 @@ let slack = null;
 let etoroClient = null;
 let isRunning = false;
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function calcNewAvgCost(existingQty, existingAvg, newQty, newPrice) {
+  const total = existingQty + newQty;
+  if (total === 0) return newPrice;
+  return ((existingQty * (existingAvg || newPrice)) + (newQty * newPrice)) / total;
+}
+
+async function executeSell({ symbol, pos, portion, reason, currentPrice, state }) {
+  const sellQty = (pos.quantity || 0) * portion;
+  const proceeds = sellQty * currentPrice;
+  const pnlThisSell = sellQty * (currentPrice - (pos.avg_cost || currentPrice));
+
+  try {
+    if (!config.safety?.dry_run) {
+      await etoroClient.sellPosition({
+        positionIds: pos.positionIds,
+        positionId: pos.positionId,
+        instrumentId: pos.instrumentId,
+      });
+    }
+
+    if (portion >= 1) {
+      // Full exit: reset all pyramid state
+      state.positions[symbol] = {
+        ...pos,
+        quantity: 0,
+        avg_cost: null,
+        pyramid_level: 0,
+        entry_price: null,
+        level2_price: null,
+        level3_price: null,
+        stop_price: null,
+        atr_at_entry: null,
+      };
+    } else {
+      state.positions[symbol].quantity = (pos.quantity || 0) - sellQty;
+    }
+
+    state = updateAfterTrade(state, symbol);
+
+    await slack.send(slack.formatTrade({
+      action: 'sell', symbol, price: currentPrice,
+      pnl: pnlThisSell, cashRemaining: (state.cash || 0) + proceeds,
+      tranche: `${(portion * 100).toFixed(0)}%`, reason
+    }));
+
+    const tradeEntry = JSON.stringify({
+      ts: new Date().toISOString(), symbol, action: 'sell',
+      amount: proceeds, price: currentPrice,
+      pnl: Number(pnlThisSell.toFixed(2)), reason
+    });
+    fs.appendFileSync(path.join(LOG_DIR, 'trades.jsonl'), tradeEntry + '\n');
+
+    if (config.safety?.dry_run) {
+      console.log(`[DRY RUN] SELL ${symbol} ${(portion * 100).toFixed(0)}%: ${reason}`);
+    }
+  } catch (err) {
+    console.error(`[Trade] Sell ${symbol} failed:`, err.message);
+  }
+
+  return state;
+}
+
+async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, state }) {
+  const sizes = config.strategy?.pyramid_sizes || [0.4, 0.3, 0.3];
+  const trancheSize = sizes[tranche - 1] || 0.33;
+  const budget = allocateBudget(symbol, Object.keys(state.positions), state.cash || 0, config) * trancheSize;
+
+  if (budget <= 0) return state;
+
+  const qty = budget / currentPrice;
+  const atrMult = config.strategy?.atr_stop_multiplier || 2.0;
+
+  try {
+    if (!config.safety?.dry_run) {
+      await etoroClient.buyAsset({ symbol, amount: budget });
+    }
+
+    const newAvg = calcNewAvgCost(pos.quantity || 0, pos.avg_cost || currentPrice, qty, currentPrice);
+
+    if (tranche === 1) {
+      state.positions[symbol] = {
+        ...pos,
+        quantity: (pos.quantity || 0) + qty,
+        avg_cost: newAvg,
+        pyramid_level: 1,
+        entry_price: currentPrice,
+        level2_price: null,
+        level3_price: null,
+        stop_price: currentPrice - atrMult * atr,
+        atr_at_entry: atr,
+      };
+    } else if (tranche === 2) {
+      state.positions[symbol] = {
+        ...pos,
+        quantity: (pos.quantity || 0) + qty,
+        avg_cost: newAvg,
+        pyramid_level: 2,
+        level2_price: currentPrice,
+        stop_price: currentPrice - atrMult * atr,
+      };
+    } else if (tranche === 3) {
+      state.positions[symbol] = {
+        ...pos,
+        quantity: (pos.quantity || 0) + qty,
+        avg_cost: newAvg,
+        pyramid_level: 3,
+        level3_price: currentPrice,
+        stop_price: currentPrice - atrMult * atr,
+      };
+    }
+
+    state = updateAfterTrade(state, symbol);
+
+    await slack.send(slack.formatTrade({
+      action: 'buy', symbol, price: currentPrice, amount: budget,
+      newAvg, cashRemaining: (state.cash || 0) - budget, reason
+    }));
+
+    const tradeEntry = JSON.stringify({
+      ts: new Date().toISOString(), symbol, action: 'buy',
+      amount: budget, price: currentPrice, reason
+    });
+    fs.appendFileSync(path.join(LOG_DIR, 'trades.jsonl'), tradeEntry + '\n');
+
+    if (config.safety?.dry_run) {
+      console.log(`[DRY RUN] BUY ${symbol} L${tranche} $${budget.toFixed(2)}: ${reason}`);
+    }
+  } catch (err) {
+    console.error(`[Trade] Buy ${symbol} failed:`, err.message);
+  }
+
+  return state;
+}
+
+// ── Main cycle ────────────────────────────────────────────────────────────────
+
 async function runCycle() {
   if (isRunning) { console.log('[Bot] Previous cycle still running, skipping.'); return; }
   isRunning = true;
   console.log(`[Bot] Cycle start: ${new Date().toISOString()}`);
 
-  // Reload config each cycle so watchlist/thresholds changes take effect without restart
   config = loadConfig();
-
   let state = loadState();
   state = resetDailyCounters(state);
 
   try {
-    // 1. Fetch macro regime (once per cycle)
-    let macroEquity = state.regime.macro_equity;
-    let macroCrypto = state.regime.macro_crypto;
+    // 3. Get market state (cached or fresh)
+    const prevMarketState = state.market_state?.state || null;
+    let currentMarketState = 'RISK_NEUTRAL';
+    let marketScore = 0;
+
     try {
-      const sp500 = await fetchSP500History();
-      macroEquity = detectEquityRegime(sp500);
-      const btcDom = await fetchBTCDominanceHistory();
-      macroCrypto = detectCryptoRegime(btcDom.current, btcDom.weekAgo);
-      state.regime = { macro_equity: macroEquity, macro_crypto: macroCrypto, updated_at: new Date().toISOString() };
+      const ms = await getMarketState(state);
+      currentMarketState = ms.state;
+      marketScore = ms.score;
+      state.market_state = {
+        state: currentMarketState,
+        score: marketScore,
+        last_fetch: ms.last_fetch || state.market_state?.last_fetch || new Date().toISOString(),
+        previous_state: prevMarketState,
+      };
+      console.log(`[MarketState] ${currentMarketState} (score ${marketScore})`);
     } catch (err) {
-      console.warn('[Regime] Failed to fetch macro data, using cached:', err.message);
+      console.warn('[MarketState] Fetch failed, using cached:', err.message);
+      currentMarketState = state.market_state?.state || 'RISK_NEUTRAL';
     }
 
-    // 2. Fetch portfolio + prices
+    // Emergency exit: PANIC — close everything now, skip rest of cycle
+    if (currentMarketState === 'PANIC') {
+      console.log('[Bot] PANIC state — emergency exit all positions');
+      const openSymbols = Object.entries(state.positions)
+        .filter(([, p]) => (p.quantity || 0) > 0)
+        .map(([sym]) => sym);
+
+      const prices = {};
+      if (openSymbols.length) {
+        const p = await fetchSymbolPrices(openSymbols).catch(() => ({}));
+        Object.assign(prices, p);
+      }
+
+      for (const sym of openSymbols) {
+        const pos = state.positions[sym];
+        const price = prices[sym] || pos.avg_cost || 0;
+        if (price > 0) {
+          state = await executeSell({ symbol: sym, pos, portion: 1, reason: 'Market state: PANIC — acil çıkış', currentPrice: price, state });
+        }
+      }
+
+      state.last_check = new Date().toISOString();
+      saveState(state);
+      isRunning = false;
+      return;
+    }
+
+    // 4. Fetch portfolio + prices from eToro
     let portfolioData = null;
     try {
       portfolioData = await etoroClient.getPortfolioPositions();
@@ -58,87 +228,63 @@ async function runCycle() {
       return;
     }
 
-    // Normalize portfolio — Public API returns { positions, cash } with symbol already set
     const prices = {};
     const rawPositions = portfolioData?.positions || [];
     let cash = portfolioData?.cash || 0;
-    const normalizedPositions = rawPositions.map(p => ({
-      symbol: p.symbol,
-      instrumentId: p.instrumentId,
-      positionIds: p.positionIds,
-      units: p.units || 0,
-      avgCost: p.avgCost || 0,
-    }));
+
     for (const p of rawPositions) {
-      if (p.symbol && p.currentPrice) prices[p.symbol] = p.currentPrice;
-    }
-
-    // Update state positions from live data
-    for (const pos of normalizedPositions) {
-      const sym = pos.symbol;
+      const sym = p.symbol;
       if (!sym) continue;
+      if (p.currentPrice) prices[sym] = p.currentPrice;
       if (!state.positions[sym]) state.positions[sym] = {};
-      state.positions[sym].quantity = pos.units;
-      state.positions[sym].positionIds = pos.positionIds;
-      state.positions[sym].instrumentId = pos.instrumentId;
-      // Set avg_cost from live data if bot hasn't tracked it (pre-existing positions)
-      if (!state.positions[sym].avg_cost && pos.avgCost) {
-        state.positions[sym].avg_cost = pos.avgCost;
+      state.positions[sym].quantity    = p.units || 0;
+      state.positions[sym].positionIds = p.positionIds;
+      state.positions[sym].instrumentId = p.instrumentId;
+      if (!state.positions[sym].avg_cost && p.avgCost) {
+        state.positions[sym].avg_cost = p.avgCost;
       }
     }
 
-    // Fetch prices from Yahoo Finance for watchlist symbols missing from eToro response
-    const missingPriceSymbols = (config.watchlist || []).filter(s => !prices[s]);
-    if (missingPriceSymbols.length) {
-      try {
-        const yahooprices = await fetchSymbolPrices(missingPriceSymbols);
-        Object.assign(prices, yahooprices);
-      } catch (err) {
-        console.warn('[Prices] Yahoo Finance fetch failed:', err.message);
-      }
-    }
-
-    // Cash: use API value if > 0, otherwise fall back to config override
     const configCash = config.budget?.available_cash ?? 0;
-    if (cash === 0 && configCash > 0) {
-      cash = configCash;
-      console.log(`[Cash] Using config override: $${cash}`);
-    }
-
-    // Persist prices + cash for UI display
-    state.prices = prices;
+    if (cash === 0 && configCash > 0) { cash = configCash; }
     state.cash = cash;
 
-    // All symbols to evaluate: portfolio + watchlist
     const allSymbols = [...new Set([
       ...Object.keys(state.positions),
       ...(config.watchlist || [])
     ])];
 
-    // Portfolio value + drawdown check
+    // Fetch missing prices from Yahoo
+    const missingPriceSymbols = allSymbols.filter(s => !prices[s]);
+    if (missingPriceSymbols.length) {
+      const yPrices = await fetchSymbolPrices(missingPriceSymbols).catch(() => ({}));
+      Object.assign(prices, yPrices);
+    }
+    state.prices = prices;
+
+    // Portfolio value + drawdown
     const portfolioValue = calcTotalPortfolioValue(state.positions, prices, cash);
     state = checkDrawdown(state, portfolioValue);
 
-    // Fetch OHLCV history for all symbols (3 months, daily) for real indicator computation
+    // 5. Fetch OHLCV histories (1 year — needed for EMA200)
     let historyMap = {};
     try {
-      historyMap = await fetchSymbolHistories(allSymbols);
-      console.log(`[History] Fetched for: ${Object.keys(historyMap).join(', ')}`);
+      historyMap = await fetchSymbolHistories(allSymbols, '1y');
+      console.log(`[History] Fetched 1y for: ${Object.keys(historyMap).join(', ')}`);
     } catch (err) {
       console.warn('[History] Batch fetch failed:', err.message);
     }
 
-    // Load analyst consensus signals from extension-collected research cache
-    let researchSignals = {};
+    // 6. Fetch benchmark returns once for all symbols in this cycle
+    const neededBenchmarks = new Set(allSymbols.map(s => getExchangeBenchmark(s)));
+    let benchmarkReturns = {};
     try {
-      researchSignals = await loadResearchSignals();
-      const covered = Object.keys(researchSignals);
-      if (covered.length) console.log(`[Research] Analyst signals: ${covered.join(', ')}`);
+      benchmarkReturns = await fetchBenchmarkReturns([...neededBenchmarks]);
     } catch (err) {
-      console.warn('[Research] Load failed:', err.message);
+      console.warn('[RS] Benchmark fetch failed:', err.message);
     }
 
-    // 3. Process each asset through decision pipeline
+    // 7. Per-symbol decision loop
     const assetReports = [];
     let totalPnl = 0;
 
@@ -147,184 +293,143 @@ async function runCycle() {
       const currentPrice = prices[symbol] || 0;
       if (!currentPrice) continue;
 
-      // First time we see a watchlist item with no position: save price as reference.
-      // Next cycles will measure dips from this reference, enabling buy signals.
-      if (!pos.avg_cost && !pos.quantity) {
-        if (!state.positions[symbol]) state.positions[symbol] = {};
-        if (!state.positions[symbol].avg_cost) {
-          state.positions[symbol].avg_cost = currentPrice;
-          console.log(`[Bot] ${symbol}: reference price set at $${currentPrice.toFixed(2)}`);
-          assetReports.push({ symbol, price: currentPrice, avgCost: currentPrice, change: 0, action: 'hold', reason: 'İlk gözlem — referans fiyat ayarlandı' });
+      const pnl = (pos.quantity || 0) > 0 ? calcPnL(pos.quantity, pos.avg_cost || currentPrice, currentPrice) : 0;
+      totalPnl += pnl;
+
+      const hist = historyMap[symbol];
+      if (!hist || hist.closes.length < 14) {
+        assetReports.push({ symbol, price: currentPrice, action: 'hold', reason: 'Yeterli tarihsel veri yok' });
+        continue;
+      }
+
+      // a. Asset regime
+      const assetRegime = detectAssetRegimeV3(hist.closes, hist.highs, hist.lows);
+
+      // b. Relative strength
+      let rsScore = null;
+      if (hist.closes.length >= 21) {
+        const closes = hist.closes;
+        const assetReturn = ((closes[closes.length - 1] - closes[closes.length - 21]) / closes[closes.length - 21]) * 100;
+        const bench = getExchangeBenchmark(symbol);
+        const benchReturn = benchmarkReturns[bench] ?? 0;
+        rsScore = calcRelativeStrength(assetReturn, benchReturn);
+      }
+
+      // c. Exit triggers (only for open positions)
+      if ((pos.quantity || 0) > 0) {
+        const exitResult = checkExitTrigger({
+          pos, currentPrice, assetRegime,
+          currentMarketState, prevMarketState
+        });
+
+        if (exitResult.exit) {
+          // Market hours check — skip sell for closed exchanges
+          const market = isMarketOpen(symbol);
+          if (!market.open && market.exchange !== 'CRYPTO') {
+            assetReports.push({ symbol, price: currentPrice, action: 'hold', reason: `Piyasa kapalı (çıkış ertelendi) — ${exitResult.reason}` });
+            continue;
+          }
+
+          state = await executeSell({
+            symbol, pos, portion: exitResult.portion,
+            reason: exitResult.reason, currentPrice, state
+          });
+          assetReports.push({ symbol, price: currentPrice, action: 'sell', reason: exitResult.reason });
           continue;
         }
       }
 
-      const change = calcChange(currentPrice, pos.avg_cost);
-      const pnl = pos.quantity > 0 ? calcPnL(pos.quantity, pos.avg_cost, currentPrice) : 0;
-      totalPnl += pnl;
+      // d. Entry filters
+      const pyramidLevel = pos.pyramid_level || 0;
+      const adxThreshold = config.strategy?.adx_threshold || 20;
+      const rsThreshold  = config.strategy?.rs_threshold  || 70;
 
-      const assetClass = config.strategy?.asset_classes?.[symbol] || 'stocks';
-      const baseThresholds = config.thresholds?.[assetClass] || config.thresholds?.stocks;
+      let allFiltersPass = true;
+      let failReason = null;
 
-      // Real OHLCV history for indicators + regime
-      const hist = historyMap[symbol];
-
-      // Asset regime — use real history if available, fall back to single price
-      const assetRegime = detectAssetRegime(hist?.closes?.length >= 14 ? hist.closes : [currentPrice]);
-      const { thresholds, budgetMultiplier } = applyRegimeAdjustments(
-        baseThresholds, macroEquity, macroCrypto, assetClass, assetRegime
-      );
-
-      // Real indicators from OHLCV history
-      const indicators = hist && hist.closes.length >= 15
-        ? analyzeSignals(hist.closes, hist.highs, hist.lows)
-        : { rsi: null, macd: null, bollinger: null, signal: 'neutral' };
-
-      // Analyst consensus from research page (collected by extension)
-      const research = researchSignals[symbol] || null;
-
-      let decision = decide({ change: change || 0, thresholds, indicators });
-
-      // Research overlay: if analysts strongly disagree with the DCA decision, downgrade it
-      if (research && research.total >= 3) {
-        if (decision.action === 'buy' && research.consensusSignal === 'bearish') {
-          decision = {
-            action: 'hold', portion: 0,
-            reason: `${decision.reason} — analist konsensüs SATIŞ (${Math.round(research.sellPct * 100)}% sell, hedef $${research.priceTarget?.toFixed(2) || '?'})`
-          };
-        } else if (decision.action === 'sell' && research.consensusSignal === 'bullish') {
-          // Don't block sells on technical grounds, but note the conflict
-          decision = { ...decision, reason: `${decision.reason} — not: analistler AL diyor (${Math.round(research.buyPct * 100)}%)` };
-        } else if (decision.action === 'hold' && research.priceTarget && research.priceTarget > currentPrice * 1.15 && research.consensusSignal === 'bullish') {
-          // Strong analyst upside + bullish consensus nudges edge to watch more closely
-          decision = { ...decision, reason: `${decision.reason} — hedef $${research.priceTarget.toFixed(2)} (analist: ${Math.round(research.buyPct * 100)}% AL)` };
-        }
-      }
-
-      // AI edge analysis — chart screenshot not available via Public API, skip
-      if (decision.action === 'edge') {
-        decision = { action: 'hold', portion: 0, reason: 'edge — AI analizi atlandı (chart yok)' };
+      if (currentMarketState !== 'RISK_ON') {
+        allFiltersPass = false;
+        failReason = `Market state: ${currentMarketState} (RISK_ON gerekli)`;
+      } else if (assetRegime.trend !== 'BULL') {
+        allFiltersPass = false;
+        failReason = `Regime filtresi: EMA/ADX koşulu sağlanmadı (trend: ${assetRegime.trend})`;
+      } else if (!assetRegime.adx || assetRegime.adx <= adxThreshold) {
+        allFiltersPass = false;
+        failReason = `Regime filtresi: ADX ${assetRegime.adx?.toFixed(1) || 'null'} ≤ ${adxThreshold}`;
+      } else if (rsScore === null || rsScore < rsThreshold) {
+        allFiltersPass = false;
+        failReason = `RS filtresi: ${rsScore?.toFixed(0) || '?'} < ${rsThreshold} (benchmark'ın gerisinde)`;
       }
 
       // Risk check
       const riskResult = check({
-        symbol, action: decision.action, state, config,
-        portfolioValue, assetValue: (pos.quantity || 0) * currentPrice
+        symbol, action: pyramidLevel === 0 && allFiltersPass ? 'buy' : 'hold',
+        state, config, portfolioValue,
+        assetValue: (pos.quantity || 0) * currentPrice
       });
 
-      if (!riskResult.approved && decision.action !== 'hold') {
-        assetReports.push({ symbol, price: currentPrice, avgCost: pos.avg_cost, change: change || 0, action: 'hold', blocked: true, blockedReason: riskResult.reason, reason: decision.reason });
-        if (decision.action === 'buy') {
-          await slack.send(slack.formatBlock({ symbol, reason: riskResult.reason, price: currentPrice }));
-        }
+      if (!riskResult.approved && allFiltersPass && pyramidLevel === 0) {
+        assetReports.push({ symbol, price: currentPrice, action: 'hold', blocked: true, reason: riskResult.reason });
         continue;
       }
 
-      // Market hours check — skip buy/sell for stocks if exchange is closed
-      if (decision.action === 'buy' || decision.action === 'sell') {
+      // e. Pyramid decision
+      const decision = decideMomentum({
+        pyramidLevel,
+        currentPrice,
+        entryPrice: pos.entry_price || null,
+        level2Price: pos.level2_price || null,
+        atr: assetRegime.atr || 0,
+        filters: { allPass: allFiltersPass, failReason }
+      });
+
+      if (decision.action === 'buy' && assetRegime.atr) {
         const market = isMarketOpen(symbol);
-        if (!market.open) {
-          console.log(`[MarketHours] ${symbol} piyasa kapalı (${market.exchange}): ${market.reason}`);
-          assetReports.push({
-            symbol, price: currentPrice, avgCost: pos.avg_cost,
-            change: change || 0, action: 'hold',
-            reason: `Piyasa kapalı — ${market.reason}`
-          });
+        if (!market.open && market.exchange !== 'CRYPTO') {
+          assetReports.push({ symbol, price: currentPrice, action: 'hold', reason: `Piyasa kapalı — ${market.reason}` });
           continue;
         }
-      }
 
-      if ((decision.action === 'buy' || decision.action === 'sell') && config.safety?.dry_run) {
-        console.log(`[DRY RUN] ${decision.action.toUpperCase()} ${symbol}: ${decision.reason}`);
-        assetReports.push({ symbol, price: currentPrice, avgCost: pos.avg_cost, change: change || 0, action: decision.action, reason: decision.reason });
-        continue;
+        state = await executeBuy({
+          symbol, pos, tranche: decision.tranche,
+          reason: decision.reason, currentPrice,
+          atr: assetRegime.atr, state
+        });
+        assetReports.push({ symbol, price: currentPrice, action: 'buy', reason: decision.reason });
+      } else {
+        assetReports.push({ symbol, price: currentPrice, action: 'hold', reason: decision.reason });
       }
-
-      if (decision.action === 'buy') {
-        const budget = allocateBudget(symbol, allSymbols, cash, config) * budgetMultiplier;
-        if (budget > 0) {
-          try {
-            const qty = budget / currentPrice;
-            await etoroClient.buyAsset({ symbol, amount: budget });
-            const newAvg = calcNewAvgCost(pos.quantity || 0, pos.avg_cost || currentPrice, qty, currentPrice);
-            state.positions[symbol] = { ...pos, avg_cost: newAvg, quantity: (pos.quantity || 0) + qty };
-            state = updateAfterTrade(state, symbol);
-            await slack.send(slack.formatTrade({
-              action: 'buy', symbol, price: currentPrice, amount: budget,
-              newAvg, cashRemaining: cash - budget, reason: decision.reason
-            }));
-            // Log to trade history
-            const tradeEntry = JSON.stringify({
-              ts: new Date().toISOString(), symbol, action: 'buy',
-              amount: budget, price: currentPrice, reason: decision.reason
-            });
-            fs.appendFileSync(path.join(LOG_DIR, 'trades.jsonl'), tradeEntry + '\n');
-          } catch (err) {
-            console.error(`[Trade] Buy ${symbol} failed:`, err.message);
-          }
-        }
-      } else if (decision.action === 'sell' && pos.quantity > 0) {
-        const sellQty = pos.quantity * decision.portion;
-        const proceeds = sellQty * currentPrice;
-        const pnlThisSell = sellQty * (currentPrice - (pos.avg_cost || currentPrice));
-        try {
-          await etoroClient.sellPosition({
-            positionIds: pos.positionIds,
-            positionId: pos.positionId,
-            instrumentId: pos.instrumentId,
-          });
-          state.positions[symbol].quantity -= sellQty;
-          if (state.positions[symbol].quantity <= 0.001) state.positions[symbol].avg_cost = null;
-          state = updateAfterTrade(state, symbol);
-          await slack.send(slack.formatTrade({
-            action: 'sell', symbol, price: currentPrice,
-            pnl: pnlThisSell, cashRemaining: cash + proceeds,
-            tranche: `${(decision.portion * 100).toFixed(0)}%`, reason: decision.reason
-          }));
-          // Log to trade history
-          const tradeEntry = JSON.stringify({
-            ts: new Date().toISOString(), symbol, action: 'sell',
-            amount: proceeds, price: currentPrice,
-            pnl: Number(pnlThisSell.toFixed(2)), reason: decision.reason
-          });
-          fs.appendFileSync(path.join(LOG_DIR, 'trades.jsonl'), tradeEntry + '\n');
-        } catch (err) {
-          console.error(`[Trade] Sell ${symbol} failed:`, err.message);
-        }
-      }
-
-      assetReports.push({ symbol, price: currentPrice, avgCost: pos.avg_cost, change: change || 0, action: decision.action, reason: decision.reason });
     }
 
-    // 4. Send Slack check report
+    // 8. Save decisions for UI display
+    state.last_decisions = assetReports.map(r => {
+      const market = isMarketOpen(r.symbol);
+      return { ...r, market_open: market.open, exchange: market.exchange, checked_at: new Date().toISOString() };
+    });
+
+    // 9. Send Slack report
     const totalPnlPct = portfolioValue > 0 ? (totalPnl / (portfolioValue - totalPnl)) * 100 : 0;
     await slack.send(slack.formatCheckReport({
-      layer: 'Public API',
+      layer: 'Momentum v3',
       cash,
       portfolioValue,
       assets: assetReports,
       totalPnl,
       totalPnlPct,
       aiUsage: {
-        dailyCalls: state.ai_usage.daily_calls,
-        dailyLimit: state.ai_usage.daily_limit,
-        monthlyCost: state.ai_usage.monthly_cost_usd,
-        monthlyBudget: state.ai_usage.monthly_budget_usd
+        dailyCalls: state.ai_usage?.daily_calls || 0,
+        dailyLimit: state.ai_usage?.daily_limit || 0,
+        monthlyCost: state.ai_usage?.monthly_cost_usd || 0,
+        monthlyBudget: state.ai_usage?.monthly_budget_usd || 0,
       },
       risk: {
-        macroEquity,
-        macroCrypto,
+        macroEquity: currentMarketState,
+        macroCrypto: currentMarketState,
         paused: state.risk.trades_paused,
         dailyTrades: state.risk.daily_trades_today,
         maxDailyTrades: config.strategy?.max_daily_trades || 10
       }
     }));
-
-    // Save last decisions with market hours status for UI display
-    state.last_decisions = assetReports.map(r => {
-      const market = isMarketOpen(r.symbol);
-      return { ...r, market_open: market.open, exchange: market.exchange, checked_at: new Date().toISOString() };
-    });
 
     state.last_check = new Date().toISOString();
     saveState(state);
@@ -338,19 +443,17 @@ async function runCycle() {
 }
 
 async function main() {
-  // Ensure logs directory exists
   if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
-  // Write PID for UI stop button
   fs.writeFileSync(path.join(process.cwd(), 'bot.pid'), process.pid.toString());
+
   config = loadConfig();
   slack = new SlackNotifier(process.env.SLACK_WEBHOOK_URL || config.slack?.webhook_url);
   etoroClient = new EToroClient(config);
 
   const intervalMin = config.strategy?.check_interval_minutes || 10;
-  console.log(`[Bot] Starting. Interval: ${intervalMin}min. Dry run: ${config.safety?.dry_run}`);
-  await slack.send(`🤖 eToro Bot başladı — ${intervalMin}dk aralık, dry_run=${config.safety?.dry_run}`);
+  console.log(`[Bot] Starting Momentum v3. Interval: ${intervalMin}min. Dry run: ${config.safety?.dry_run}`);
+  await slack.send(`🤖 eToro Bot v3 Momentum başladı — ${intervalMin}dk aralık, dry_run=${config.safety?.dry_run}`);
 
-  // Run immediately then on schedule
   await runCycle();
   cron.schedule(`*/${intervalMin} * * * *`, runCycle);
 }
