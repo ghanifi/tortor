@@ -10,7 +10,7 @@ const { decideMomentum, checkExitTrigger } = require('./strategies/momentum');
 const { calcTechnicalScore } = require('./analysis/technical-score');
 const { checkCorrelation } = require('./analysis/correlation');
 const { check, updateAfterTrade, checkDrawdown, resetDailyCounters } = require('./risk');
-const { calcPnL, calcTotalPortfolioValue, allocateBudget } = require('./portfolio');
+const { calcPnL, calcTotalPortfolioValue, allocateBudget, calcPositionBudget } = require('./portfolio');
 const SlackNotifier = require('./slack');
 const { isMarketOpen } = require('./market-hours');
 const path = require('path');
@@ -94,14 +94,26 @@ async function executeSell({ symbol, pos, portion, reason, currentPrice, state }
 }
 
 async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, state }) {
-  const sizes = config.strategy?.pyramid_sizes || [0.4, 0.3, 0.3];
-  const trancheSize = sizes[tranche - 1] || 0.33;
-  const budget = allocateBudget(symbol, Object.keys(state.positions), state.cash || 0, config) * trancheSize;
+  const sizes           = config.strategy?.pyramid_sizes        || [0.4, 0.3, 0.3];
+  const trancheSize     = sizes[tranche - 1]                    || 0.33;
+  const atrMult         = config.strategy?.atr_stop_multiplier  || 2.0;
+  const riskPerTradePct = config.strategy?.risk_per_trade_pct   ?? 0.75;
+  const minReserve      = config.safety?.min_cash_reserve       || 0;
+
+  const budget = calcPositionBudget({
+    totalAccountValue: (state.cash || 0) + portfolioValue,
+    currentPrice,
+    atr:               atr || 0,
+    atrStopMultiplier: atrMult,
+    riskPerTradePct,
+    trancheSize,
+    availableCash:     state.cash || 0,
+    minCashReserve:    minReserve,
+  });
 
   if (budget <= 0) return state;
 
   const qty = budget / currentPrice;
-  const atrMult = config.strategy?.atr_stop_multiplier || 2.0;
 
   try {
     if (!config.safety?.dry_run) {

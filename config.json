@@ -25,6 +25,7 @@
       "ETH": "crypto"
     },
     "pyramid_sizes": [0.4, 0.3, 0.3],
+    "risk_per_trade_pct": 0.75,
     "atr_stop_multiplier": 2.0,
     "atr_period": 14,
     "adx_threshold": 20,
