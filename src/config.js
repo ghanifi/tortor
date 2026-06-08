@@ -38,11 +38,16 @@ function decrypt(encryptedValue) {
 
 function loadConfig() {
   const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-  const pw = raw.etoro?.password;
   const PLACEHOLDER = 'encrypted:REPLACE_AFTER_RUNNING_npm_run_encrypt';
-  if (pw?.startsWith('encrypted:') && pw !== PLACEHOLDER) {
-    raw.etoro.password = decrypt(pw); // throws loudly if BOT_SECRET wrong
-  }
+  const decryptField = (obj, field) => {
+    const val = obj?.[field];
+    if (val?.startsWith('encrypted:') && val !== PLACEHOLDER) {
+      obj[field] = decrypt(val);
+    }
+  };
+  decryptField(raw.etoro, 'password');
+  decryptField(raw.etoro, 'publicApiKey');
+  decryptField(raw.etoro, 'userApiKey');
   return raw;
 }
 

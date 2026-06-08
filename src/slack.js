@@ -2,7 +2,7 @@ const axios = require('axios');
 const https = require('https');
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
-const LAYER_NAMES = ['', 'HTTP API (Katman 1)', 'Playwright DOM (Katman 2)', 'Full Automation (Katman 3)'];
+const LAYER_NAMES = { 'Public API': 'eToro Public API' };
 
 class SlackNotifier {
   constructor(webhookUrl) {
@@ -28,7 +28,8 @@ class SlackNotifier {
       else if (a.action === 'edge') status = '🔍 edge zone';
       else if (a.blocked) status = `🚫 ${a.blockedReason}`;
       const reasonSuffix = a.reason ? `  ← ${a.reason}` : '';
-      return `  ${a.symbol.padEnd(6)} $${a.price}  avg $${a.avgCost}  ${sign}${a.change.toFixed(1)}%  ${status}${reasonSuffix}`;
+      const fmt = (n) => n != null ? `$${Number(n).toFixed(2)}` : '-';
+      return `  ${a.symbol.padEnd(6)} ${fmt(a.price)}  avg ${fmt(a.avgCost)}  ${sign}${a.change.toFixed(1)}%  ${status}${reasonSuffix}`;
     }).join('\n');
 
     const pnlSign = totalPnl >= 0 ? '+' : '';
@@ -37,7 +38,7 @@ class SlackNotifier {
     return [
       `🤖 eToro Bot — ${time} Kontrol`,
       ``,
-      `📡 Bağlantı: ${LAYER_NAMES[layer] || 'Bilinmiyor'}`,
+      `📡 Bağlantı: ${LAYER_NAMES[layer] || layer || 'Bilinmiyor'}`,
       `🌍 Regime: Makro=${risk.macroEquity}/${risk.macroCrypto}`,
       `💰 Nakit: $${cash.toFixed(2)} | Portföy: $${portfolioValue.toFixed(2)}`,
       `🤖 AI: ${aiUsage.dailyCalls}/${aiUsage.dailyLimit} günlük | $${aiUsage.monthlyCost.toFixed(2)}/$${aiUsage.monthlyBudget.toFixed(2)} aylık`,
