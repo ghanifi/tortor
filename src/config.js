@@ -3,7 +3,9 @@ const fs = require('fs');
 const crypto = require('crypto');
 const path = require('path');
 
-const CONFIG_PATH = path.join(process.cwd(), 'config.json');
+const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
+const BUNDLED_CONFIG_PATH = path.join(process.cwd(), 'config.json');
+const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
 const ALGORITHM = 'aes-256-gcm';
 
 function getKey() {
@@ -37,6 +39,11 @@ function decrypt(encryptedValue) {
 }
 
 function loadConfig() {
+  // On first run, copy bundled config to data dir so UI changes persist across deploys
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (!fs.existsSync(CONFIG_PATH)) {
+    fs.copyFileSync(BUNDLED_CONFIG_PATH, CONFIG_PATH);
+  }
   const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
   const PLACEHOLDER = 'encrypted:REPLACE_AFTER_RUNNING_npm_run_encrypt';
   const decryptField = (obj, field) => {

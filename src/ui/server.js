@@ -18,9 +18,10 @@ const SESSION_SECRET = process.env.SESSION_SECRET || (() => {
   console.warn('[UI] SESSION_SECRET not set — sessions will be invalidated on restart');
   return crypto.randomBytes(32).toString('hex');
 })();
-const CONFIG_PATH = path.join(process.cwd(), 'config.json');
+const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
+const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const LOG_DIR = path.join(process.cwd(), 'logs');
+const LOG_DIR = path.join(DATA_DIR, 'logs');
 const BOT_LOG = path.join(LOG_DIR, 'bot.log');
 const TRADES_LOG = path.join(LOG_DIR, 'trades.jsonl');
 
