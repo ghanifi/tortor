@@ -337,7 +337,7 @@ async function main() {
   // Write PID for UI stop button
   fs.writeFileSync(path.join(process.cwd(), 'bot.pid'), process.pid.toString());
   config = loadConfig();
-  slack = new SlackNotifier(config.slack?.webhook_url);
+  slack = new SlackNotifier(process.env.SLACK_WEBHOOK_URL || config.slack?.webhook_url);
   etoroClient = new EToroClient(config);
 
   const intervalMin = config.strategy?.check_interval_minutes || 10;

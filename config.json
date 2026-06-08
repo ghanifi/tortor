@@ -1,16 +1,18 @@
 {
   "etoro": {
-    "username": "your@email.com",
-    "password": "encrypted:REPLACE_AFTER_RUNNING_npm_run_encrypt"
+    "username": "info@gggtech.co.uk",
+    "password": "encrypted:proBu8BDhoX7jI9TiyLIbxExnvhSsFgx9clXYvm+4/D9FtZ0UA==",
+    "publicApiKey": "encrypted:igW6UMQhjFw1W5iVDQai3WdyPGcb6G1Oey15lwHiV5KjeNa3Ov/nP8EEc+D0u6tJNwhlk9/dtEXRTYodNgeGN/PfwysEZQdazRaAq/ReX7UVcRsqDkVvaNRC/w==",
+    "userApiKey": "encrypted:SMwGRIDaFHIGG688WS6ao83suw3D0voL1Dyb7tgxDsy7dr6MCvody2QU5us0NyzP/iPTOYMIgqI5sfAFCv25VyUfCGZ2r9h8sVUItIX5/aiYzhZWk9kihVM/GfoMA/MuSfBOKPYjY5mw1Q3y85nLL17r/m2vp0i6x4E93eUlJtRu7mKlos0So1YFumtY/6nONwB7ibHhZzRS9511z1tZ3R27hSf/Ub0tdmlT2lueeZcaWFSRvUHUKm1iSWCgqJ5JZAHMVpWH+RavF+Eaeu1VJ8JKwqQw4hWGhObcCYhRf6TjIdQL9+TcrWlwCIShC0DHCWIYKz9iGuxhB/X5qWXASn9so0abo432eQkmwHxqrE/oIg+FvQjzRFOtQ/PYHUsL"
   },
   "slack": {
-    "webhook_url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+    "webhook_url": ""
   },
   "ai": {
     "provider": "anthropic",
     "model": "claude-haiku-4-5-20251001",
     "daily_call_limit": 20,
-    "monthly_budget_usd": 10.00
+    "monthly_budget_usd": 10
   },
   "strategy": {
     "active": "dca",
@@ -24,17 +26,39 @@
     }
   },
   "thresholds": {
-    "stocks": { "buy": -7, "sell": [7, 10, 13] },
-    "crypto": { "buy": -12, "sell": [10, 15, 20] }
+    "stocks": {
+      "buy": -7,
+      "sell": [
+        7,
+        10,
+        13
+      ]
+    },
+    "crypto": {
+      "buy": -12,
+      "sell": [
+        10,
+        15,
+        20
+      ]
+    }
   },
   "budget": {
     "default": "equal_split",
-    "per_asset": {}
+    "per_asset": {},
+    "available_cash": 0
   },
-  "watchlist": ["TSLA", "AAPL", "BTC"],
+  "watchlist": [
+    "SNDK",
+    "BLLN",
+    "SMR",
+    "ASTS",
+    "RR.L",
+    "OKLO"
+  ],
   "safety": {
     "min_cash_reserve": 100,
     "max_exposure_pct": 30,
-    "dry_run": true
+    "dry_run": false
   }
 }
