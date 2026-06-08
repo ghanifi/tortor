@@ -394,6 +394,8 @@ async function runCycle() {
         rsScore, techScore,
         rsi: techResult.rsi, macdHistogram: techResult.macdHistogram,
         volumeExpanding: techResult.volumeExpanding, atrExpanding: techResult.atrExpanding,
+        techRsiPts: techResult.rsiPts, techMacdPts: techResult.macdPts,
+        techVolPts: techResult.volumePts, techAtrPts: techResult.atrPts,
         filters: {},
         pyramidLevel: pos.pyramid_level || 0,
       };

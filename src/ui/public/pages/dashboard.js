@@ -142,6 +142,9 @@ window.DashboardPage = {
         </div>
       `;
 
+      // Near miss list — last cycle holds that almost qualified
+      await DashboardPage._renderNearMiss(container, config);
+
       // Auto-refresh every 30s while on dashboard
       clearInterval(DashboardPage._refreshTimer);
       DashboardPage._refreshTimer = setInterval(() => {
@@ -152,6 +155,72 @@ window.DashboardPage = {
     } catch (err) {
       container.innerHTML = `<div style="color:var(--red)">Hata: ${err.message}</div>`;
     }
+  },
+
+  async _renderNearMiss(container, config) {
+    const entryScore = config?.strategy?.entry_score ?? 70;
+    const nearMissMin = entryScore - 5; // default 65
+
+    let recentDecisions = [];
+    try { recentDecisions = await apiGet('/api/decisions?limit=300'); } catch { return; }
+    if (!recentDecisions?.length) return;
+
+    // Find the most recent cycle timestamp
+    const latestCycleTs = recentDecisions[0]?.cycle_ts;
+    if (!latestCycleTs) return;
+
+    // Filter: same cycle, decision=hold, final_score in [nearMissMin, entryScore)
+    const nearMisses = recentDecisions.filter(d =>
+      d.cycle_ts === latestCycleTs &&
+      d.decision === 'hold' &&
+      d.final_score != null &&
+      d.final_score >= nearMissMin &&
+      d.final_score < entryScore
+    );
+
+    if (!nearMisses.length) return;
+
+    const section = document.createElement('div');
+    section.className = 'card';
+    section.style.marginTop = '16px';
+    section.innerHTML = `
+      <div class="card-title" style="margin-bottom:8px">
+        🔍 Near Miss — Eşiğe Yakın (${nearMissMin}–${entryScore - 1})
+        <span style="color:var(--muted);font-size:11px;font-weight:normal;margin-left:8px">Son döngü · izle, eşiği düşürme</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Sembol</th>
+              <th class="right">Final</th>
+              <th class="right">RS</th>
+              <th class="right" title="RSI/MACD/Vol/ATR — üzerine gel">Teknik</th>
+              <th class="right">Piyasa</th>
+              <th class="right">Breadth</th>
+              <th>Neden</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${nearMisses.map(d => {
+              const techTip = d.tech_score != null
+                ? `RSI:${d.tech_rsi_pts ?? '?'} MACD:${d.tech_macd_pts ?? '?'} Vol:${d.tech_vol_pts ?? '?'} ATR:${d.tech_atr_pts ?? '?'}`
+                : '';
+              return `<tr>
+                <td style="font-weight:600">${esc(d.symbol)}</td>
+                <td class="right" style="color:var(--accent);font-weight:600">${d.final_score}</td>
+                <td class="right">${d.rs_score != null ? Number(d.rs_score).toFixed(1) : '—'}</td>
+                <td class="right" style="cursor:default" title="${techTip}">${d.tech_score ?? '—'}</td>
+                <td class="right">${d.market_score ?? '—'}</td>
+                <td class="right">${d.breadth_count != null ? d.breadth_count + '/11' : '—'}</td>
+                <td style="color:var(--muted);font-size:11px;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(d.fail_reason || '')}">${esc(d.fail_reason || '—')}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+    container.appendChild(section);
   },
 
   async toggleDryRun() {

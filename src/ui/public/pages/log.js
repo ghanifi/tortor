@@ -116,8 +116,9 @@ window.LogPage = {
               <th style="padding:6px 8px;text-align:right">Breadth</th>
               <th style="padding:6px 8px">Trend</th>
               <th style="padding:6px 8px;text-align:right">ADX</th>
+              <th style="padding:6px 8px;text-align:right">Final</th>
               <th style="padding:6px 8px;text-align:right">RS</th>
-              <th style="padding:6px 8px;text-align:right">Tek.</th>
+              <th style="padding:6px 8px;text-align:right" title="Teknik skor — üzerine gel: RSI/MACD/Vol/ATR alt kırılımı">Tek.</th>
               <th style="padding:6px 8px;text-align:right">RSI</th>
               <th style="padding:6px 8px;text-align:center" title="Piyasa / Breadth / Trend / ADX / RS / Teknik / Earnings / Korelasyon / AI">Filtreler</th>
               <th style="padding:6px 8px">Karar</th>
@@ -142,8 +143,9 @@ window.LogPage = {
                 <td style="padding:6px 8px;text-align:right">${d.breadth_count != null ? d.breadth_count + '/11' : '—'}</td>
                 <td style="padding:6px 8px">${d.trend || '—'}</td>
                 <td style="padding:6px 8px;text-align:right">${fmtNum(d.adx)}</td>
+                <td style="padding:6px 8px;text-align:right;font-weight:${d.final_score >= 85 ? '700' : 'normal'};color:${d.final_score >= 85 ? 'var(--green)' : d.final_score >= 70 ? 'var(--accent)' : 'inherit'}">${d.final_score != null ? d.final_score : '—'}</td>
                 <td style="padding:6px 8px;text-align:right">${fmtNum(d.rs_score)}</td>
-                <td style="padding:6px 8px;text-align:right">${fmtNum(d.tech_score, 0)}</td>
+                <td style="padding:6px 8px;text-align:right;cursor:default" title="${d.tech_score != null ? `RSI:${d.tech_rsi_pts ?? '?'}  MACD:${d.tech_macd_pts ?? '?'}  Vol:${d.tech_vol_pts ?? '?'}  ATR:${d.tech_atr_pts ?? '?'}` : ''}">${fmtNum(d.tech_score, 0)}</td>
                 <td style="padding:6px 8px;text-align:right">${fmtNum(d.rsi)}</td>
                 <td style="padding:6px 8px;text-align:center;white-space:nowrap;letter-spacing:2px">
                   ${fmtFilter(f.market_state)}${fmtFilter(f.breadth)}${fmtFilter(f.trend)}${fmtFilter(f.adx)}${fmtFilter(f.rs_score)}${fmtFilter(f.tech_score)}${fmtFilter(f.earnings)}${fmtFilter(f.correlation)}${fmtFilter(f.ai_audit)}

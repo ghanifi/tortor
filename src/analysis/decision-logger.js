@@ -34,10 +34,15 @@ function ensureDir() {
  * @param {number|null} r.atr
  * @param {number|null} r.rsScore
  * @param {number|null} r.techScore
- * @param {number|null} r.rsi        from tech score breakdown
+ * @param {number|null} r.rsi            from tech score breakdown
  * @param {number|null} r.macdHistogram
  * @param {boolean|null} r.volumeExpanding
  * @param {boolean|null} r.atrExpanding
+ * @param {number|null} r.techRsiPts     RSI sub-score (0/15/30)
+ * @param {number|null} r.techMacdPts    MACD sub-score (0/30)
+ * @param {number|null} r.techVolPts     Volume sub-score (0/10/20)
+ * @param {number|null} r.techAtrPts     ATR sub-score (0/20)
+ * @param {number|null} r.finalScore     composite 0-100 entry score
  *
  * Filter results:
  * @param {object} r.filters         { market_state, breadth, trend, adx, rs_score, tech_score, earnings, correlation }
@@ -72,6 +77,11 @@ function logDecision(r) {
     macd_histogram:   r.macdHistogram != null ? +Number(r.macdHistogram).toFixed(4) : null,
     volume_expanding: r.volumeExpanding ?? null,
     atr_expanding:    r.atrExpanding    ?? null,
+    tech_rsi_pts:     r.techRsiPts  ?? null,
+    tech_macd_pts:    r.techMacdPts ?? null,
+    tech_vol_pts:     r.techVolPts  ?? null,
+    tech_atr_pts:     r.techAtrPts  ?? null,
+    final_score:      r.finalScore  ?? null,
     filters:          r.filters ?? {},
     pyramid_level:    r.pyramidLevel ?? 0,
     decision:         r.decision,
