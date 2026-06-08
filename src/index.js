@@ -12,6 +12,7 @@ const { checkCorrelation } = require('./analysis/correlation');
 const { check, updateAfterTrade, checkDrawdown, resetDailyCounters } = require('./risk');
 const { calcPnL, calcTotalPortfolioValue, allocateBudget, calcPositionBudget } = require('./portfolio');
 const { logEntry, logExit } = require('./analysis/data-lake');
+const { checkEarningsBlock } = require('./analysis/event-engine');
 const SlackNotifier = require('./slack');
 const { isMarketOpen } = require('./market-hours');
 const path = require('path');
@@ -407,6 +408,15 @@ async function runCycle() {
       } else if (techScore < techThreshold) {
         allFiltersPass = false;
         failReason = `Teknik filtre: ${techScore} < ${techThreshold} (RSI/MACD/Volume/ATR zayıf)`;
+      } else if (pyramidLevel === 0) {
+        // Layer 5: Earnings filter — only blocks fresh entries (tranche 1)
+        const earningsDaysBefore = config.strategy?.earnings_days_before ?? 5;
+        const earningsDaysAfter  = config.strategy?.earnings_days_after  ?? 2;
+        const earningsResult = await checkEarningsBlock(symbol, { daysBefore: earningsDaysBefore, daysAfter: earningsDaysAfter });
+        if (earningsResult.blocked) {
+          allFiltersPass = false;
+          failReason = earningsResult.reason;
+        }
       }
 
       // e. Pyramid decision
