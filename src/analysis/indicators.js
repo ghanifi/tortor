@@ -42,7 +42,7 @@ function calculateADX(highs, lows, closes, period = 14) {
   return values[values.length - 1].adx;
 }
 
-function calculateEMA(closes, period) {
+function calculateEMA(closes, period = 14) {
   if (closes.length < period) return null;
   const values = EMA.calculate({ values: closes, period });
   return values.length ? values[values.length - 1] : null;
