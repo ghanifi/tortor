@@ -6,11 +6,14 @@
 // This score is for the "how strong is this setup?" question, not "is the trend up?".
 //
 // Weights (sum = 1.0):
-//   RS Score       30%  — outperformance vs benchmark is the core momentum signal
-//   Technical      25%  — RSI/MACD/Volume/ATR confirms the entry timing
-//   Market State   20%  — macro backdrop quality
+//   Market State   30%  — macro backdrop; bad market hurts even the best stock
+//   RS Score       25%  — outperformance vs benchmark is the core momentum signal
+//   Technical      20%  — RSI/MACD/Volume/ATR confirms the entry timing
 //   Breadth        15%  — how many sectors are participating
-//   ADX strength   10%  — how much trend strength above the minimum threshold
+//   ADX strength   10%  — trend strength above the minimum threshold
+//
+// Note: RS and ADX are both trend-derived; giving Market the highest weight
+// prevents double-counting trend info and adds a fast-reacting macro brake.
 //
 // Thresholds (configurable):
 //   entry_score      70  → BUY (normal position)
@@ -38,9 +41,9 @@ function calcFinalScore({ rsScore, techScore, marketScore, breadthCount, adx, ad
   const adxNorm = adx != null ? clamp(((adx - adxMin) / 30) * 100, 0, 100) : 0;
 
   return Math.round(
-    rs      * 0.30 +
-    tech    * 0.25 +
-    mkt     * 0.20 +
+    mkt     * 0.30 +
+    rs      * 0.25 +
+    tech    * 0.20 +
     breadth * 0.15 +
     adxNorm * 0.10
   );

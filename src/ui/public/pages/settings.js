@@ -40,7 +40,7 @@ window.SettingsPage = {
         <div class="card" style="margin-bottom:16px">
           <div class="card-title">🎯 Final Skor</div>
           <div style="color:var(--muted);font-size:11px;margin-bottom:12px">
-            RS(%30) + Teknik(%25) + Piyasa(%20) + Breadth(%15) + ADX(%10) → 0–100
+            Piyasa(%30) + RS(%25) + Teknik(%20) + Breadth(%15) + ADX(%10) → 0–100
           </div>
           <div class="grid-2">
             <div>

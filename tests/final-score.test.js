@@ -11,9 +11,10 @@ describe('calcFinalScore', () => {
     expect(score).toBe(100);
   });
 
-  test('weights: RS 30%, Tech 25%, Market 20%, Breadth 15%, ADX 10%', () => {
-    const score = calcFinalScore({ rsScore: 100, techScore: 0, marketScore: 0, breadthCount: 0, adx: null });
-    expect(score).toBe(30); // RS only
+  test('weights: Market 30%, RS 25%, Tech 20%, Breadth 15%, ADX 10%', () => {
+    expect(calcFinalScore({ rsScore: 0,   techScore: 0, marketScore: 100, breadthCount: 0,  adx: null })).toBe(30); // Market only
+    expect(calcFinalScore({ rsScore: 100, techScore: 0, marketScore: 0,   breadthCount: 0,  adx: null })).toBe(25); // RS only
+    expect(calcFinalScore({ rsScore: 0,   techScore: 100, marketScore: 0, breadthCount: 0,  adx: null })).toBe(20); // Tech only
   });
 
   test('breadth 0/11 contributes 0', () => {
@@ -54,7 +55,7 @@ describe('calcFinalScore', () => {
 
   test('null marketScore defaults to 50', () => {
     const score = calcFinalScore({ rsScore: 0, techScore: 0, marketScore: null, breadthCount: 0, adx: null });
-    expect(score).toBe(10); // 50 * 0.20 = 10
+    expect(score).toBe(15); // 50 * 0.30 = 15
   });
 
   test('typical strong setup scores above 85', () => {
