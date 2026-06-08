@@ -25,6 +25,9 @@ function decideMomentum({ pyramidLevel, currentPrice, entryPrice, level2Price, a
   // Level 1 → Level 2: price must clear entry + 1×ATR
   if (pyramidLevel === 1) {
     if (!entryPrice) return { action: 'hold', tranche: null, reason: 'Piramit L2: entry_price eksik' };
+    if (!filters.allPass && filters.failReason?.includes('Market state')) {
+      return { action: 'hold', tranche: null, reason: filters.failReason };
+    }
     const trigger = entryPrice + atr;
     if (currentPrice > trigger) {
       return {
@@ -38,6 +41,9 @@ function decideMomentum({ pyramidLevel, currentPrice, entryPrice, level2Price, a
   // Level 2 → Level 3: price must clear level2 + 1×ATR
   if (pyramidLevel === 2) {
     if (!level2Price) return { action: 'hold', tranche: null, reason: 'Piramit L3: level2_price eksik' };
+    if (!filters.allPass && filters.failReason?.includes('Market state')) {
+      return { action: 'hold', tranche: null, reason: filters.failReason };
+    }
     const trigger = level2Price + atr;
     if (currentPrice > trigger) {
       return {
@@ -84,8 +90,9 @@ function checkExitTrigger({ pos, currentPrice, assetRegime, currentMarketState, 
   }
 
   // Trigger 3: Market state degradation
+  // Note: eToro API closes full positions only — no partial sell support
   if (prevMarketState !== 'RISK_OFF' && currentMarketState === 'RISK_OFF') {
-    return { exit: true, portion: 0.5, reason: 'Market state: RISK_OFF → pozisyon %50 küçültüldü' };
+    return { exit: true, portion: 1, reason: 'Market state: RISK_OFF → pozisyon kapatıldı' };
   }
 
   return { exit: false };

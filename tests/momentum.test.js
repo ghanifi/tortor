@@ -113,14 +113,14 @@ describe('checkExitTrigger — trigger 2 trend break', () => {
 });
 
 describe('checkExitTrigger — trigger 3 state degradation', () => {
-  test('RISK_ON → RISK_OFF transition → sell 50%', () => {
+  test('RISK_ON → RISK_OFF transition → close full position', () => {
     const r = checkExitTrigger({
       pos: { stop_price: 85 }, currentPrice: 100,
       assetRegime: BULL_REGIME,
       currentMarketState: 'RISK_OFF', prevMarketState: 'RISK_ON'
     });
     expect(r.exit).toBe(true);
-    expect(r.portion).toBe(0.5);
+    expect(r.portion).toBe(1);
     expect(r.reason).toMatch(/RISK_OFF/);
   });
 
@@ -142,6 +142,28 @@ describe('checkExitTrigger — no trigger', () => {
       currentMarketState: 'RISK_ON', prevMarketState: 'RISK_ON'
     });
     expect(r.exit).toBe(false);
+  });
+});
+
+describe('decideMomentum — L2/L3 respects market state filter', () => {
+  const marketFailFilters = { allPass: false, failReason: 'Market state: RISK_NEUTRAL (RISK_ON gerekli)' };
+
+  test('level 1 with non-RISK_ON market state → hold even if price cleared', () => {
+    const r = decideMomentum({
+      pyramidLevel: 1, currentPrice: 110, entryPrice: 100,
+      level2Price: null, atr: 5, filters: marketFailFilters
+    });
+    expect(r.action).toBe('hold');
+    expect(r.reason).toMatch(/Market state/);
+  });
+
+  test('level 2 with non-RISK_ON market state → hold even if price cleared', () => {
+    const r = decideMomentum({
+      pyramidLevel: 2, currentPrice: 125, entryPrice: 100,
+      level2Price: 110, atr: 5, filters: marketFailFilters
+    });
+    expect(r.action).toBe('hold');
+    expect(r.reason).toMatch(/Market state/);
   });
 });
 

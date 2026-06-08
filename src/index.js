@@ -140,10 +140,11 @@ async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, sta
     }
 
     state = updateAfterTrade(state, symbol);
+    state.cash = Math.max(0, (state.cash || 0) - budget);
 
     await slack.send(slack.formatTrade({
       action: 'buy', symbol, price: currentPrice, amount: budget,
-      newAvg, cashRemaining: (state.cash || 0) - budget, reason
+      newAvg, cashRemaining: state.cash, reason
     }));
 
     const tradeEntry = JSON.stringify({
@@ -359,9 +360,10 @@ async function runCycle() {
       let allFiltersPass = true;
       let failReason = null;
 
-      if (currentMarketState !== 'RISK_ON') {
+      const minState = config.strategy?.min_global_state || 'RISK_ON';
+      if (currentMarketState !== minState) {
         allFiltersPass = false;
-        failReason = `Market state: ${currentMarketState} (RISK_ON gerekli)`;
+        failReason = `Market state: ${currentMarketState} (${minState} gerekli)`;
       } else if (assetRegime.trend !== 'BULL') {
         allFiltersPass = false;
         failReason = `Regime filtresi: EMA/ADX koşulu sağlanmadı (trend: ${assetRegime.trend})`;
