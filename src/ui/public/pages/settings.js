@@ -2,6 +2,8 @@
 window.SettingsPage = {
   _config: null,
 
+  _esc(s) { return String(s).replace(/'/g, "\\'").replace(/"/g, '&quot;'); },
+
   async render(container) {
     try {
       const config = await apiGet('/api/config');
@@ -24,7 +26,7 @@ window.SettingsPage = {
             ${watchlist.map(sym => `
               <span class="tag">
                 ${sym}
-                <span class="tag-remove" onclick="SettingsPage.removeTag('${sym}')">✕</span>
+                <span class="tag-remove" onclick="SettingsPage.removeTag('${SettingsPage._esc(sym)}')">✕</span>
               </span>
             `).join('')}
           </div>
@@ -105,9 +107,9 @@ window.SettingsPage = {
             <div id="per-asset-rows">
               ${Object.entries(budget.per_asset || {}).map(([sym, amt]) => `
                 <div class="field-row per-asset-row" data-sym="${sym}">
-                  <input class="input-field" value="${sym}" style="width:70px" readonly>
+                  <input class="input-field" value="${SettingsPage._esc(sym)}" style="width:70px" readonly>
                   <input class="input-field pa-amount" type="number" value="${amt}" style="width:80px">
-                  <button class="btn-secondary" style="padding:4px 8px" onclick="SettingsPage.removePerAsset('${sym}')">✕</button>
+                  <button class="btn-secondary" style="padding:4px 8px" onclick="SettingsPage.removePerAsset('${SettingsPage._esc(sym)}')">✕</button>
                 </div>
               `).join('')}
             </div>
@@ -161,9 +163,9 @@ window.SettingsPage = {
     row.className = 'field-row per-asset-row';
     row.dataset.sym = sym;
     row.innerHTML = `
-      <input class="input-field" value="${sym}" style="width:70px" readonly>
+      <input class="input-field" value="${SettingsPage._esc(sym)}" style="width:70px" readonly>
       <input class="input-field pa-amount" type="number" value="${amt}" style="width:80px">
-      <button class="btn-secondary" style="padding:4px 8px" onclick="SettingsPage.removePerAsset('${sym}')">✕</button>
+      <button class="btn-secondary" style="padding:4px 8px" onclick="SettingsPage.removePerAsset('${SettingsPage._esc(sym)}')">✕</button>
     `;
     document.getElementById('per-asset-rows').appendChild(row);
   },
@@ -184,19 +186,33 @@ window.SettingsPage = {
     input.value = '';
     // Re-render just the tags section
     document.getElementById('watchlist-tags').innerHTML = this._config.watchlist.map(s => `
-      <span class="tag">${s} <span class="tag-remove" onclick="SettingsPage.removeTag('${s}')">✕</span></span>
+      <span class="tag">${s} <span class="tag-remove" onclick="SettingsPage.removeTag('${SettingsPage._esc(s)}')">✕</span></span>
     `).join('');
   },
 
   removeTag(sym) {
     this._config.watchlist = (this._config.watchlist || []).filter(s => s !== sym);
     document.getElementById('watchlist-tags').innerHTML = this._config.watchlist.map(s => `
-      <span class="tag">${s} <span class="tag-remove" onclick="SettingsPage.removeTag('${s}')">✕</span></span>
+      <span class="tag">${s} <span class="tag-remove" onclick="SettingsPage.removeTag('${SettingsPage._esc(s)}')">✕</span></span>
     `).join('');
   },
 
   async save() {
     const statusEl = document.getElementById('save-status');
+
+    // Validate all numeric inputs before saving
+    const numericIds = ['s-buy', 's-sell-0', 's-sell-1', 's-sell-2',
+                        'c-buy', 'c-sell-0', 'c-sell-1', 'c-sell-2',
+                        'min-cash', 'max-exposure', 'drawdown-stop', 'cooldown', 'max-daily'];
+    for (const id of numericIds) {
+      const val = parseFloat(document.getElementById(id).value);
+      if (isNaN(val)) {
+        statusEl.style.color = 'var(--red)';
+        statusEl.textContent = `Hata: "${id}" için geçerli sayı girin`;
+        return;
+      }
+    }
+
     statusEl.textContent = 'Kaydediliyor...';
     statusEl.style.color = 'var(--muted)';
 

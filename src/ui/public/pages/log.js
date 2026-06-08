@@ -1,6 +1,12 @@
 // src/ui/public/pages/log.js
 window.LogPage = {
   render(container) {
+    // Close any existing SSE connection before creating a new one
+    if (window._activeSSE) {
+      window._activeSSE.close();
+      window._activeSSE = null;
+    }
+
     container.innerHTML = `
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
