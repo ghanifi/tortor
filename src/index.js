@@ -14,6 +14,8 @@ const { calcPnL, calcTotalPortfolioValue, allocateBudget, calcPositionBudget } =
 const { logEntry, logExit } = require('./analysis/data-lake');
 const { checkEarningsBlock } = require('./analysis/event-engine');
 const { getBreadthState } = require('./analysis/breadth');
+const { auditTrade } = require('./analysis/ai-auditor');
+const { canCallAI, recordCall } = require('./analysis/ai_budget');
 const SlackNotifier = require('./slack');
 const { isMarketOpen } = require('./market-hours');
 const path = require('path');
@@ -471,6 +473,37 @@ async function runCycle() {
         if (corrResult.blocked) {
           assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: `Korelasyon filtresi: ${corrResult.with} ile r=${corrResult.correlation.toFixed(2)}` });
           continue;
+        }
+
+        // AI Auditor (Layer 14) — final gate for new entries
+        const aiCheck = canCallAI(state);
+        if (aiCheck.allowed) {
+          try {
+            const audit = await auditTrade({
+              symbol, price: currentPrice,
+              reason: decision.reason,
+              scores: {
+                market_state:  currentMarketState,
+                market_score:  marketScore,
+                trend:         assetRegime.trend,
+                adx:           assetRegime.adx,
+                atr:           assetRegime.atr,
+                rs_score:      rsScore,
+                tech_score:    techScore,
+              },
+              model: config.ai?.model || 'claude-haiku-4-5-20251001',
+            });
+            state = recordCall(state, audit.costUsd);
+            if (audit.verdict === 'SKIP') {
+              assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: `AI Denetçi: ${audit.reason}` });
+              continue;
+            }
+            console.log(`[AI Auditor] ${symbol}: BUY — ${audit.reason}`);
+          } catch (err) {
+            console.warn(`[AI Auditor] ${symbol} denetim başarısız, devam ediliyor:`, err.message);
+          }
+        } else {
+          console.log(`[AI Auditor] ${symbol}: atlandı — ${aiCheck.reason}`);
         }
       }
 
