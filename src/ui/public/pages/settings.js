@@ -2,7 +2,7 @@
 window.SettingsPage = {
   _config: null,
 
-  _esc(s) { return String(s).replace(/'/g, "\\'").replace(/"/g, '&quot;'); },
+  _esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/'/g, "&#39;").replace(/"/g, '&quot;'); },
 
   async render(container) {
     try {
@@ -209,6 +209,14 @@ window.SettingsPage = {
       if (isNaN(val)) {
         statusEl.style.color = 'var(--red)';
         statusEl.textContent = `Hata: "${id}" için geçerli sayı girin`;
+        return;
+      }
+    }
+
+    for (const input of document.querySelectorAll('.pa-amount')) {
+      if (isNaN(parseFloat(input.value))) {
+        statusEl.style.color = 'var(--red)';
+        statusEl.textContent = 'Hata: Per-asset miktar için geçerli sayı girin';
         return;
       }
     }
