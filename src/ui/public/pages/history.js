@@ -54,12 +54,12 @@ window.HistoryPage = {
                   : trades.map(t => `
                     <tr>
                       <td style="color:var(--muted)">${fmtTime(t.ts)}</td>
-                      <td style="font-weight:600">${t.symbol}</td>
-                      <td><span class="badge badge-${t.action}">${t.action === 'buy' ? 'ALIŞ' : 'SATIŞ'}</span></td>
+                      <td style="font-weight:600">${esc(t.symbol)}</td>
+                      <td><span class="badge badge-${t.action === 'buy' ? 'buy' : 'sell'}">${t.action === 'buy' ? 'ALIŞ' : 'SATIŞ'}</span></td>
                       <td class="right">${fmt$(t.amount)}</td>
                       <td class="right">${fmt$(t.price)}</td>
                       <td class="right" style="color:${t.pnl == null ? 'inherit' : t.pnl >= 0 ? 'var(--green)' : 'var(--red)'}">${t.pnl != null ? fmt$(t.pnl) : '—'}</td>
-                      <td style="color:var(--muted);font-size:11px;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.reason || ''}</td>
+                      <td style="color:var(--muted);font-size:11px;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.reason || '')}</td>
                     </tr>
                   `).join('')
                 }

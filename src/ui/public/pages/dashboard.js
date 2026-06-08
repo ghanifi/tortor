@@ -102,7 +102,7 @@ window.DashboardPage = {
                     const price = state.prices?.[sym] || null;
                     const chgPct = (price && p.avg_cost) ? ((price - p.avg_cost) / p.avg_cost) * 100 : null;
                     return `<tr>
-                      <td style="font-weight:600">${sym}</td>
+                      <td style="font-weight:600">${esc(sym)}</td>
                       <td class="right">${fmt$(p.avg_cost)}</td>
                       <td class="right">${fmt$(price)}</td>
                       <td class="right" style="color:${chgPct == null ? 'inherit' : chgPct >= 0 ? 'var(--green)' : 'var(--red)'}">${fmtPct(chgPct)}</td>

@@ -16,6 +16,11 @@ async function api(method, path, body) {
 async function apiGet(path)       { return api('GET', path); }
 async function apiPost(path, body){ return api('POST', path, body); }
 
+// ── HTML escape ─────────────────────────────────────────
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/'/g, '&#39;').replace(/"/g, '&quot;');
+}
+
 // ── Formatters ───────────────────────────────────────────
 function fmt$(n) { return n != null ? '$' + Number(n).toFixed(2) : '—'; }
 function fmtPct(n) { return n != null ? (n >= 0 ? '+' : '') + Number(n).toFixed(1) + '%' : '—'; }

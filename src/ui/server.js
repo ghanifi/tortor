@@ -66,8 +66,9 @@ function requireAuth(req, res, next) {
 // Login / logout (no auth required)
 app.post('/login', (req, res) => {
   const provided = req.body.password || '';
-  const match = provided.length === PASSWORD.length &&
-    crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(PASSWORD));
+  const a = Buffer.from(provided, 'utf8');
+  const b = Buffer.from(PASSWORD, 'utf8');
+  const match = a.length === b.length && crypto.timingSafeEqual(a, b);
   if (match) {
     req.session.authenticated = true;
     return res.json({ ok: true });
@@ -114,6 +115,7 @@ app.post('/api/bot/stop', (req, res) => {
   const pidFile = path.join(process.cwd(), 'bot.pid');
   try {
     const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
+    if (!Number.isInteger(pid) || pid <= 1) throw new Error('Geçersiz PID');
     process.kill(pid, 'SIGTERM');
     res.json({ ok: true });
   } catch (err) {

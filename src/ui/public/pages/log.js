@@ -39,6 +39,7 @@ window.LogPage = {
         (line.includes('[Trade]') ? ' trade' : '');
       div.textContent = line;
       panel.appendChild(div);
+      while (panel.children.length > 500) panel.removeChild(panel.firstChild);
       panel.scrollTop = panel.scrollHeight;
     };
 

@@ -29,7 +29,7 @@ window.PortfolioPage = {
                   ? '<tr><td colspan="6" style="color:var(--subtle);padding-top:12px">Açık pozisyon yok</td></tr>'
                   : positions.map(p => `
                     <tr>
-                      <td style="font-weight:600">${p.symbol}</td>
+                      <td style="font-weight:600">${esc(p.symbol)}</td>
                       <td class="right">${p.quantity != null ? Number(p.quantity).toFixed(4) : '—'}</td>
                       <td class="right">${fmt$(p.avgCost)}</td>
                       <td class="right">${fmt$(p.currentPrice)}</td>

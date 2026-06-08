@@ -4,3 +4,5 @@ logs/
 coverage/
 *.log
 bot.pid
+config.json
+state.json

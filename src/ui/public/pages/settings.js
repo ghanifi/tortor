@@ -224,6 +224,10 @@ window.SettingsPage = {
     statusEl.textContent = 'Kaydediliyor...';
     statusEl.style.color = 'var(--muted)';
 
+    // Re-fetch config to get current dry_run value (may have changed via dashboard toggle)
+    const freshConfig = await apiGet('/api/config');
+    if (!freshConfig) { statusEl.textContent = ''; return; }
+
     const updates = {
       watchlist: this._config.watchlist,
       thresholds: {
@@ -245,7 +249,7 @@ window.SettingsPage = {
         }
       },
       safety: {
-        ...this._config.safety,
+        ...freshConfig.safety,
         min_cash_reserve: parseFloat(document.getElementById('min-cash').value),
         max_exposure_pct: parseFloat(document.getElementById('max-exposure').value),
       },
