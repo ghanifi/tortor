@@ -3,6 +3,7 @@
 const axios = require('axios');
 const https = require('https');
 
+// Bypass SSL inspection proxy that presents self-signed certs
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 function sma(values, period) {
@@ -19,8 +20,11 @@ async function fetchYahoo(symbol, range = '1y') {
     timeout: 10000,
     httpsAgent
   });
-  const quote = res.data.chart.result[0].indicators.quote[0];
+  const result = res.data?.chart?.result;
+  if (!result || !result[0]) throw new Error(`fetchYahoo: no result for ${symbol}`);
+  const quote = result[0].indicators.quote[0];
   const closes = (quote.close || []).filter(Boolean);
+  if (!closes.length) throw new Error(`fetchYahoo: empty closes for ${symbol}`);
   return closes;
 }
 
