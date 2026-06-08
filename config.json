@@ -35,6 +35,7 @@
     "min_global_state": "RISK_ON",
     "earnings_days_before": 5,
     "earnings_days_after": 2,
+    "breadth_min_sectors": 4,
     "market_state_cache_minutes": 60
   },
   "thresholds": {

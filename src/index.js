@@ -13,6 +13,7 @@ const { check, updateAfterTrade, checkDrawdown, resetDailyCounters } = require('
 const { calcPnL, calcTotalPortfolioValue, allocateBudget, calcPositionBudget } = require('./portfolio');
 const { logEntry, logExit } = require('./analysis/data-lake');
 const { checkEarningsBlock } = require('./analysis/event-engine');
+const { getBreadthState } = require('./analysis/breadth');
 const SlackNotifier = require('./slack');
 const { isMarketOpen } = require('./market-hours');
 const path = require('path');
@@ -220,6 +221,22 @@ async function runCycle() {
       currentMarketState = state.market_state?.state || 'RISK_NEUTRAL';
     }
 
+    // 3b. Get breadth state (Layer 4, cached)
+    let breadthCount = 0;
+    let breadthState = 'NARROW';
+    try {
+      const breadth = await getBreadthState(state);
+      breadthCount = breadth.count ?? 0;
+      breadthState = breadth.state;
+      state.breadth_state = {
+        score: breadth.score, count: breadth.count, total: breadth.total,
+        state: breadth.state, last_fetch: breadth.last_fetch,
+      };
+      console.log(`[Breadth] ${breadthState}: ${breadthCount}/${breadth.total ?? 11} sektör MA50 üzerinde`);
+    } catch (err) {
+      console.warn('[Breadth] Fetch failed, skipping breadth filter:', err.message);
+    }
+
     // Emergency exit: PANIC — close everything now, skip rest of cycle
     if (currentMarketState === 'PANIC') {
       console.log('[Bot] PANIC state — emergency exit all positions');
@@ -393,9 +410,14 @@ async function runCycle() {
       let failReason = null;
 
       const minState = config.strategy?.min_global_state || 'RISK_ON';
+      const breadthMin = config.strategy?.breadth_min_sectors ?? 4;
       if (currentMarketState !== minState) {
         allFiltersPass = false;
         failReason = `Market state: ${currentMarketState} (${minState} gerekli)`;
+      } else if (pyramidLevel === 0 && breadthCount < breadthMin) {
+        allFiltersPass = false;
+        failReason = `Breadth filtresi: ${breadthCount} sektör MA50 üzerinde (min ${breadthMin})`;
+
       } else if (assetRegime.trend !== 'BULL') {
         allFiltersPass = false;
         failReason = `Regime filtresi: EMA/ADX koşulu sağlanmadı (trend: ${assetRegime.trend})`;
