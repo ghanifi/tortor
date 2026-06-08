@@ -144,3 +144,17 @@ describe('checkExitTrigger — no trigger', () => {
     expect(r.exit).toBe(false);
   });
 });
+
+describe('decideMomentum — null price guards', () => {
+  test('level 1 with null entryPrice → hold (no spurious L2 buy)', () => {
+    const r = decideMomentum({ pyramidLevel: 1, currentPrice: 150, entryPrice: null, level2Price: null, atr: 5, filters: PASS });
+    expect(r.action).toBe('hold');
+    expect(r.reason).toMatch(/entry_price/);
+  });
+
+  test('level 2 with null level2Price → hold (no spurious L3 buy)', () => {
+    const r = decideMomentum({ pyramidLevel: 2, currentPrice: 150, entryPrice: 100, level2Price: null, atr: 5, filters: PASS });
+    expect(r.action).toBe('hold');
+    expect(r.reason).toMatch(/level2_price/);
+  });
+});

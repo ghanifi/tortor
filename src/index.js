@@ -57,7 +57,12 @@ async function executeSell({ symbol, pos, portion, reason, currentPrice, state }
         atr_at_entry: null,
       };
     } else {
+      // Partial exit: reduce quantity and step down pyramid level
       state.positions[symbol].quantity = (pos.quantity || 0) - sellQty;
+      const currentLevel = pos.pyramid_level || 0;
+      if (currentLevel > 0) {
+        state.positions[symbol].pyramid_level = currentLevel - 1;
+      }
     }
 
     state = updateAfterTrade(state, symbol);
@@ -208,6 +213,9 @@ async function runCycle() {
         const price = prices[sym] || pos.avg_cost || 0;
         if (price > 0) {
           state = await executeSell({ symbol: sym, pos, portion: 1, reason: 'Market state: PANIC — acil çıkış', currentPrice: price, state });
+        } else {
+          console.error(`[PANIC] ${sym} satılamadı — fiyat verisi yok, manuel müdahale gerekli`);
+          await slack.send(`⚠️ PANIC: ${sym} otomatik çıkış BAŞARISIZ — fiyat verisi yok, manuel işlem gerekli`);
         }
       }
 
@@ -361,19 +369,7 @@ async function runCycle() {
         failReason = `RS filtresi: ${rsScore?.toFixed(0) || '?'} < ${rsThreshold} (benchmark'ın gerisinde)`;
       }
 
-      // Risk check
-      const riskResult = check({
-        symbol, action: pyramidLevel === 0 && allFiltersPass ? 'buy' : 'hold',
-        state, config, portfolioValue,
-        assetValue: (pos.quantity || 0) * currentPrice
-      });
-
-      if (!riskResult.approved && allFiltersPass && pyramidLevel === 0) {
-        assetReports.push({ symbol, price: currentPrice, action: 'hold', blocked: true, reason: riskResult.reason });
-        continue;
-      }
-
-      // e. Pyramid decision
+      // e. Pyramid decision (computed before risk check so L2/L3 buys also pass through risk)
       const decision = decideMomentum({
         pyramidLevel,
         currentPrice,
@@ -382,6 +378,18 @@ async function runCycle() {
         atr: assetRegime.atr || 0,
         filters: { allPass: allFiltersPass, failReason }
       });
+
+      // Risk check — applies to all buy actions including pyramid additions
+      const riskResult = check({
+        symbol, action: decision.action,
+        state, config, portfolioValue,
+        assetValue: (pos.quantity || 0) * currentPrice
+      });
+
+      if (!riskResult.approved && decision.action === 'buy') {
+        assetReports.push({ symbol, price: currentPrice, action: 'hold', blocked: true, reason: riskResult.reason });
+        continue;
+      }
 
       if (decision.action === 'buy' && assetRegime.atr) {
         const market = isMarketOpen(symbol);
