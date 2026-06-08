@@ -13,7 +13,7 @@ RUN npm ci --omit=dev
 
 COPY . .
 
-RUN mkdir -p logs
+RUN mkdir -p data/logs
 
 EXPOSE 3000
 

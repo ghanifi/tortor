@@ -8,7 +8,8 @@ const fs = require('fs');
 const path = require('path');
 
 const BASE_URL = 'https://www.etoro.com';
-const AUTH_SESSION_PATH = path.join(process.cwd(), 'logs', 'auth_session.json');
+const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
+const AUTH_SESSION_PATH = path.join(DATA_DIR, 'logs', 'auth_session.json');
 
 // Matches the mobile Chrome session observed in the real browser
 const DEFAULT_HEADERS = {

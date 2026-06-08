@@ -14,7 +14,8 @@ const { isMarketOpen } = require('./market-hours');
 const path = require('path');
 const fs = require('fs');
 
-const LOG_DIR = path.join(process.cwd(), 'logs');
+const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
+const LOG_DIR = path.join(DATA_DIR, 'logs');
 
 let config = null;
 let slack = null;

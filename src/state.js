@@ -2,7 +2,8 @@
 const fs = require('fs');
 const path = require('path');
 
-const STATE_PATH = path.join(process.cwd(), 'state.json');
+const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
+const STATE_PATH = path.join(DATA_DIR, 'state.json');
 
 const DEFAULT_STATE = {
   session: { cookies: [], expires_at: null },
@@ -23,6 +24,7 @@ Object.freeze(DEFAULT_STATE.ai_usage);
 Object.freeze(DEFAULT_STATE);
 
 function loadState() {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(STATE_PATH)) return JSON.parse(JSON.stringify(DEFAULT_STATE));
   try {
     return JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
@@ -32,6 +34,7 @@ function loadState() {
 }
 
 function saveState(state) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.writeFileSync(STATE_PATH, JSON.stringify(state, null, 2));
 }
 
