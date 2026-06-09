@@ -470,9 +470,52 @@ async function runCycle() {
             const tier = scoreToTier(finalScore, entryScore, strongScore);
 
             if (tier === 'NO_ENTRY') {
-              allFiltersPass = false;
-              failReason = `Final skor: ${finalScore} < ${entryScore} (RS:${rsScore?.toFixed(0) ?? '?'} Tek:${techScore} Mkt:${marketScore} Breadth:${breadthCount}/11)`;
-              filterLog.final_score = 'FAIL';
+              const aiMode     = config.strategy?.ai_mode     || 'gate';
+              const aiMinScore = config.strategy?.ai_min_score ?? 50;
+
+              // override mode: AI may promote a near-miss to BUY
+              if (aiMode === 'override' && finalScore >= aiMinScore && pyramidLevel === 0) {
+                const aiCheck = canCallAI(state);
+                if (aiCheck.allowed) {
+                  try {
+                    const audit = await auditTrade({
+                      symbol, price: currentPrice,
+                      reason: `Near-miss override: Final skor ${finalScore}/${entryScore}`,
+                      scores: { market_state: currentMarketState, market_score: marketScore, trend: assetRegime.trend, adx: assetRegime.adx, atr: assetRegime.atr, rs_score: rsScore, tech_score: techScore },
+                      model: config.ai?.model || 'claude-haiku-4-5-20251001',
+                    });
+                    state = recordCall(state, audit.costUsd);
+                    decisionData.aiVerdict = audit.verdict;
+                    decisionData.aiReason  = audit.reason;
+                    if (audit.verdict === 'BUY') {
+                      filterLog.final_score = 'AI_OVERRIDE';
+                      filterLog.ai_audit    = 'PASS';
+                      decisionData.finalScore = finalScore;
+                      decisionData.tier = 'BUY';
+                      console.log(`[AI Override] ${symbol}: skor ${finalScore} < ${entryScore} ama AI BUY — ${audit.reason}`);
+                      // allFiltersPass remains true → falls through to earnings check below
+                    } else {
+                      allFiltersPass = false;
+                      failReason = `Final skor: ${finalScore} < ${entryScore} | AI: ${audit.reason}`;
+                      filterLog.final_score = 'FAIL';
+                      filterLog.ai_audit    = 'FAIL';
+                    }
+                  } catch (err) {
+                    console.warn(`[AI Override] ${symbol} hata:`, err.message);
+                    allFiltersPass = false;
+                    failReason = `Final skor: ${finalScore} < ${entryScore} (RS:${rsScore?.toFixed(0) ?? '?'} Tek:${techScore} Mkt:${marketScore} Breadth:${breadthCount}/11)`;
+                    filterLog.final_score = 'FAIL';
+                  }
+                } else {
+                  allFiltersPass = false;
+                  failReason = `Final skor: ${finalScore} < ${entryScore} (AI bütçe aşıldı: ${aiCheck.reason})`;
+                  filterLog.final_score = 'FAIL';
+                }
+              } else {
+                allFiltersPass = false;
+                failReason = `Final skor: ${finalScore} < ${entryScore} (RS:${rsScore?.toFixed(0) ?? '?'} Tek:${techScore} Mkt:${marketScore} Breadth:${breadthCount}/11)`;
+                filterLog.final_score = 'FAIL';
+              }
             } else {
               filterLog.final_score = tier; // 'BUY' or 'STRONG_BUY'
 
@@ -537,9 +580,12 @@ async function runCycle() {
         filterLog.correlation = 'PASS';
 
         // AI Auditor (Layer 14) — final gate for new entries
-        let aiVerdict = null, aiReason = null;
+        // Skip if AI was already called in Pass 1 (override mode promoted this candidate)
+        let aiVerdict = decisionData.aiVerdict ?? null;
+        let aiReason  = decisionData.aiReason  ?? null;
+        const aiMode  = config.strategy?.ai_mode || 'gate';
         const aiCheck = canCallAI(state);
-        if (aiCheck.allowed) {
+        if (aiMode !== 'disabled' && !aiVerdict && aiCheck.allowed) {
           try {
             const audit = await auditTrade({
               symbol, price: currentPrice,

@@ -60,6 +60,34 @@ window.SettingsPage = {
           </div>
         </div>
 
+        <!-- AI Decision -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-title">🤖 AI Kararı</div>
+          <div class="grid-2">
+            <div>
+              <div class="field-row">
+                <span class="field-label" title="disabled: AI kapalı | gate: yalnızca son kapı | override: near-miss için de sorgula">AI modu</span>
+                <select id="ai-mode" class="input-field small" onchange="SettingsPage._toggleAiMinScore()">
+                  <option value="disabled" ${(strategy.ai_mode ?? 'override') === 'disabled' ? 'selected' : ''}>disabled — kapalı</option>
+                  <option value="gate"     ${(strategy.ai_mode ?? 'override') === 'gate'     ? 'selected' : ''}>gate — son kapı</option>
+                  <option value="override" ${(strategy.ai_mode ?? 'override') === 'override' ? 'selected' : ''}>override — near-miss'i de sorgula</option>
+                </select>
+              </div>
+            </div>
+            <div id="ai-min-score-row" style="${(strategy.ai_mode ?? 'override') === 'disabled' ? 'opacity:0.35;pointer-events:none' : ''}">
+              <div class="field-row">
+                <span class="field-label" title="AI'ın sorgulanacağı minimum Final Skor (override ve gate modunda)">AI min skor</span>
+                <input id="ai-min-score" class="input-field small" type="number" value="${strategy.ai_min_score ?? 50}">
+                <span style="color:var(--subtle);font-size:11px">/100</span>
+              </div>
+            </div>
+          </div>
+          <div style="color:var(--muted);font-size:11px;margin-top:8px">
+            <b>gate:</b> tüm filtreler geçince AI onaylar/reddeder &nbsp;|&nbsp;
+            <b>override:</b> min skoru aşan near-miss'ler için AI BUY diyebilir
+          </div>
+        </div>
+
         <!-- Budget + Risk -->
         <div class="grid-2" style="margin-bottom:16px">
           <div class="card">
@@ -169,6 +197,12 @@ window.SettingsPage = {
     }
   },
 
+  _toggleAiMinScore() {
+    const mode = document.getElementById('ai-mode').value;
+    const row  = document.getElementById('ai-min-score-row');
+    if (row) row.style.cssText = mode === 'disabled' ? 'opacity:0.35;pointer-events:none' : '';
+  },
+
   addPerAsset() {
     const sym = document.getElementById('pa-symbol').value.trim().toUpperCase();
     const amt = parseFloat(document.getElementById('pa-amount').value);
@@ -238,7 +272,7 @@ window.SettingsPage = {
     const statusEl = document.getElementById('save-status');
 
     // Validate all numeric inputs before saving
-    const numericIds = ['entry-score', 'strong-buy-score',
+    const numericIds = ['entry-score', 'strong-buy-score', 'ai-min-score',
                         'min-cash', 'max-exposure', 'drawdown-stop', 'cooldown', 'max-daily',
                         'adx-threshold', 'correlation-max', 'breadth-min-sectors',
                         'earnings-days-before', 'earnings-days-after'];
@@ -286,6 +320,8 @@ window.SettingsPage = {
         ...this._config.strategy,
         entry_score:           parseFloat(document.getElementById('entry-score').value),
         strong_buy_score:      parseFloat(document.getElementById('strong-buy-score').value),
+        ai_mode:               document.getElementById('ai-mode').value,
+        ai_min_score:          parseFloat(document.getElementById('ai-min-score').value),
         drawdown_stop_pct:     parseFloat(document.getElementById('drawdown-stop').value),
         cooldown_hours:        parseFloat(document.getElementById('cooldown').value),
         max_daily_trades:      parseInt(document.getElementById('max-daily').value, 10),

@@ -36,7 +36,9 @@
     "earnings_days_before": 5,
     "earnings_days_after": 2,
     "breadth_min_sectors": 4,
-    "market_state_cache_minutes": 60
+    "market_state_cache_minutes": 60,
+    "ai_mode": "override",
+    "ai_min_score": 50
   },
   "thresholds": {
     "stocks": {
