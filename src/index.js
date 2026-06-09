@@ -20,6 +20,7 @@ const { logDecision } = require('./analysis/decision-logger');
 const { calcFinalScore, scoreToTier } = require('./analysis/final-score');
 const SlackNotifier = require('./slack');
 const { isMarketOpen } = require('./market-hours');
+const { runCryptoScan } = require('./analysis/crypto-scanner');
 const path = require('path');
 const fs = require('fs');
 
@@ -317,9 +318,21 @@ async function runCycle() {
     if (cash === 0 && configCash > 0) { cash = configCash; }
     state.cash = cash;
 
+    // ── Crypto Scan Pass ─────────────────────────────────────────────────────
+    let cryptoCandidates = {}; // symbol → CandidateResult
+    if (config.crypto_scanner?.enabled !== false) {
+      try {
+        const scanResults = await runCryptoScan(config.crypto_scanner || {});
+        for (const c of scanResults) cryptoCandidates[c.symbol] = c;
+      } catch (err) {
+        console.warn('[CryptoScanner] Scan hatası, atlanıyor:', err.message);
+      }
+    }
+
     const allSymbols = [...new Set([
       ...Object.keys(state.positions),
-      ...(config.watchlist || [])
+      ...(config.watchlist || []),
+      ...Object.keys(cryptoCandidates),
     ])];
 
     // Fetch missing prices from Yahoo
@@ -455,7 +468,49 @@ async function runCycle() {
         filterLog.market_state = 'FAIL';
       } else {
         filterLog.market_state = 'PASS';
-        if (assetRegime.trend === 'BEAR') {
+
+        if (symbol in cryptoCandidates) {
+          // ── Crypto scanner candidate: trend/ADX already verified on 1H data ──
+          const scanResult   = cryptoCandidates[symbol];
+          const scannerScore = scanResult.score;
+          filterLog.trend = 'SCANNER';
+          filterLog.adx   = 'SCANNER';
+          decisionData.finalScore = scannerScore;
+          decisionData.tier       = scoreToTier(scannerScore, entryScore, strongScore);
+          filterLog.final_score   = decisionData.tier;
+
+          if (decisionData.tier === 'NO_ENTRY') {
+            allFiltersPass = false;
+            failReason = `Scanner skoru: ${scannerScore} < ${entryScore}`;
+          } else {
+            // max_positions cap (only for new entries)
+            if (pyramidLevel === 0) {
+              const maxPositions     = config.crypto_scanner?.max_positions ?? 3;
+              const scannerOpenCount = Object.values(state.positions)
+                .filter(p => p.source === 'crypto_scanner' && (p.quantity || 0) > 0).length;
+              if (scannerOpenCount >= maxPositions) {
+                allFiltersPass = false;
+                failReason = `Crypto scanner: max_positions (${maxPositions}) doldu`;
+                filterLog.final_score = 'SCANNER_FULL';
+              }
+            }
+            // Earnings filter (still applies to scanner candidates)
+            if (allFiltersPass && pyramidLevel === 0) {
+              const earningsDaysBefore = config.strategy?.earnings_days_before ?? 5;
+              const earningsDaysAfter  = config.strategy?.earnings_days_after  ?? 2;
+              const earningsResult = await checkEarningsBlock(symbol, { daysBefore: earningsDaysBefore, daysAfter: earningsDaysAfter });
+              if (earningsResult.blocked) {
+                allFiltersPass = false;
+                failReason = earningsResult.reason;
+                filterLog.earnings = 'FAIL';
+              } else {
+                filterLog.earnings = 'PASS';
+              }
+            } else if (pyramidLevel > 0) {
+              filterLog.earnings = 'SKIP';
+            }
+          }
+        } else if (assetRegime.trend === 'BEAR') {
           allFiltersPass = false;
           failReason = `Trend filtresi: BEAR (BULL veya SIDEWAYS gerekli)`;
           filterLog.trend = 'FAIL';
@@ -682,6 +737,11 @@ async function runCycle() {
       });
       state = buyResult.state;
       if (buyResult.success) {
+        // Tag position as scanner-originated (used for max_positions counting)
+        if (symbol in cryptoCandidates) {
+          if (!state.positions[symbol]) state.positions[symbol] = {};
+          state.positions[symbol].source = 'crypto_scanner';
+        }
         assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'buy', reason: buyReason });
         logDecision({ ...decisionData, filters: filterLog, decision: 'buy', tranche: decision.tranche, failReason: null });
       } else {
