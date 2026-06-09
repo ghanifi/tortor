@@ -449,9 +449,9 @@ async function runCycle() {
         filterLog.market_state = 'FAIL';
       } else {
         filterLog.market_state = 'PASS';
-        if (assetRegime.trend !== 'BULL') {
+        if (assetRegime.trend === 'BEAR') {
           allFiltersPass = false;
-          failReason = `Trend filtresi: ${assetRegime.trend} (BULL gerekli)`;
+          failReason = `Trend filtresi: BEAR (BULL veya SIDEWAYS gerekli)`;
           filterLog.trend = 'FAIL';
         } else {
           filterLog.trend = 'PASS';

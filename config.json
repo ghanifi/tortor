@@ -29,7 +29,7 @@
     "atr_stop_multiplier": 2.0,
     "atr_period": 14,
     "adx_threshold": 20,
-    "entry_score": 70,
+    "entry_score": 63,
     "strong_buy_score": 85,
     "correlation_max": 0.85,
     "min_global_state": "RISK_ON",
