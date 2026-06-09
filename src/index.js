@@ -103,7 +103,7 @@ async function executeSell({ symbol, pos, portion, reason, currentPrice, state, 
   return state;
 }
 
-async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, state, scores, strongBuy }) {
+async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, state, scores, strongBuy, portfolioValue }) {
   const sizes           = config.strategy?.pyramid_sizes        || [0.4, 0.3, 0.3];
   const baseSize        = sizes[tranche - 1]                    || 0.33;
   // Strong Buy: L1 tranche gets 25% larger (capped at 0.6)
@@ -623,9 +623,14 @@ async function runCycle() {
             console.warn(`[AI Auditor] ${symbol} denetim başarısız, devam ediliyor:`, err.message);
             filterLog.ai_audit = 'SKIP';
           }
+        } else if (aiVerdict) {
+          // Already called in Pass 1 (override mode) — treat as PASS
+          filterLog.ai_audit = 'PASS';
+          console.log(`[AI Auditor] ${symbol}: Pass 1'de onaylandı (${aiVerdict})`);
         } else {
           filterLog.ai_audit = 'SKIP';
-          console.log(`[AI Auditor] ${symbol}: atlandı — ${aiCheck.reason}`);
+          const skipReason = aiCheck.reason || (aiMode === 'disabled' ? 'AI devre dışı' : 'bilinmiyor');
+          console.log(`[AI Auditor] ${symbol}: atlandı — ${skipReason}`);
         }
       } else {
         filterLog.correlation = 'SKIP';
@@ -662,6 +667,7 @@ async function runCycle() {
         reason: buyReason, currentPrice,
         atr: assetRegime.atr, state,
         strongBuy: tier === 'STRONG_BUY',
+        portfolioValue,
         scores: {
           market_state:  currentMarketState,
           market_score:  marketScore,
