@@ -371,11 +371,16 @@ async function runCycle() {
       // a. Asset regime
       const assetRegime = detectAssetRegimeV3(hist.closes, hist.highs, hist.lows);
 
-      // b. Relative strength
+      // b. Relative strength — dual-window: 20-day (60%) + 63-day (40%)
+      // Prevents a short-term bounce in a multi-month downtrend from looking like momentum
       let rsScore = null;
       if (hist.closes.length >= 21) {
         const closes = hist.closes;
-        const assetReturn = ((closes[closes.length - 1] - closes[closes.length - 21]) / closes[closes.length - 21]) * 100;
+        const ret20 = ((closes[closes.length - 1] - closes[closes.length - 21]) / closes[closes.length - 21]) * 100;
+        const ret63 = closes.length >= 64
+          ? ((closes[closes.length - 1] - closes[closes.length - 64]) / closes[closes.length - 64]) * 100
+          : ret20;
+        const assetReturn = ret20 * 0.6 + ret63 * 0.4;
         const bench = getExchangeBenchmark(symbol);
         const benchReturn = benchmarkReturns[bench] ?? 0;
         rsScore = calcRelativeStrength(assetReturn, benchReturn);

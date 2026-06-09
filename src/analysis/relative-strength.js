@@ -1,5 +1,5 @@
 // src/analysis/relative-strength.js
-// Layer 3: Relative Strength — compares 20-day return against benchmark
+// Layer 3: Relative Strength — dual-window: 20-day (60%) + 63-day (40%) vs benchmark
 const axios = require('axios');
 const https = require('https');
 
@@ -23,7 +23,7 @@ async function fetchBenchmarkReturns(symbols) {
   const returns = {};
   await Promise.all(symbols.map(async sym => {
     const encoded = encodeURIComponent(sym);
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encoded}?interval=1d&range=2mo`;
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encoded}?interval=1d&range=4mo`;
     try {
       const res = await axios.get(url, {
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
@@ -32,7 +32,11 @@ async function fetchBenchmarkReturns(symbols) {
       });
       const closes = (res.data.chart.result[0].indicators.quote[0].close || []).filter(Boolean);
       if (closes.length >= 21) {
-        returns[sym] = ((closes[closes.length - 1] - closes[closes.length - 21]) / closes[closes.length - 21]) * 100;
+        const ret20 = ((closes[closes.length - 1] - closes[closes.length - 21]) / closes[closes.length - 21]) * 100;
+        const ret63 = closes.length >= 64
+          ? ((closes[closes.length - 1] - closes[closes.length - 64]) / closes[closes.length - 64]) * 100
+          : ret20;
+        returns[sym] = ret20 * 0.6 + ret63 * 0.4;
       } else {
         returns[sym] = 0;
       }
