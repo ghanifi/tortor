@@ -305,6 +305,7 @@ async function runCycle() {
       const sym = p.symbol;
       if (!sym) continue;
       if (p.currentPrice) prices[sym] = p.currentPrice;
+      const existingSource = state.positions[sym]?.source;
       if (!state.positions[sym]) state.positions[sym] = {};
       state.positions[sym].quantity    = p.units || 0;
       state.positions[sym].positionIds = p.positionIds;
@@ -312,6 +313,7 @@ async function runCycle() {
       if (!state.positions[sym].avg_cost && p.avgCost) {
         state.positions[sym].avg_cost = p.avgCost;
       }
+      if (existingSource) state.positions[sym].source = existingSource;
     }
 
     const configCash = config.budget?.available_cash ?? 0;
@@ -483,17 +485,6 @@ async function runCycle() {
             allFiltersPass = false;
             failReason = `Scanner skoru: ${scannerScore} < ${entryScore}`;
           } else {
-            // max_positions cap (only for new entries)
-            if (pyramidLevel === 0) {
-              const maxPositions     = config.crypto_scanner?.max_positions ?? 3;
-              const scannerOpenCount = Object.values(state.positions)
-                .filter(p => p.source === 'crypto_scanner' && (p.quantity || 0) > 0).length;
-              if (scannerOpenCount >= maxPositions) {
-                allFiltersPass = false;
-                failReason = `Crypto scanner: max_positions (${maxPositions}) doldu`;
-                filterLog.final_score = 'SCANNER_FULL';
-              }
-            }
             // Earnings filter (still applies to scanner candidates)
             if (allFiltersPass && pyramidLevel === 0) {
               const earningsDaysBefore = config.strategy?.earnings_days_before ?? 5;
@@ -617,7 +608,7 @@ async function runCycle() {
 
       if (decision.action === 'buy') {
         // Defer buy — will be sorted by RS score before execution
-        buyCandidates.push({ symbol, pos, currentPrice, changePct, assetRegime, decision, rsScore: rsScore ?? 0, techScore, techResult, marketScore, filterLog, decisionData, tier: decisionData.tier });
+        buyCandidates.push({ symbol, pos, currentPrice, changePct, assetRegime, decision, rsScore: (symbol in cryptoCandidates) ? cryptoCandidates[symbol].score : (rsScore ?? 0), techScore, techResult, marketScore, filterLog, decisionData, tier: decisionData.tier });
       } else {
         assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: decision.reason });
         logDecision({ ...decisionData, filters: filterLog, decision: 'hold', failReason: decision.reason });
@@ -691,6 +682,20 @@ async function runCycle() {
       } else {
         filterLog.correlation = 'SKIP';
         filterLog.ai_audit    = 'SKIP';
+      }
+
+      // max_positions cap for scanner candidates — checked in Pass 2 so source tags
+      // from earlier buys in the same cycle are already reflected
+      if ((symbol in cryptoCandidates) && decision.tranche === 1) {
+        const maxPositions     = config.crypto_scanner?.max_positions ?? 3;
+        const scannerOpenCount = Object.values(state.positions)
+          .filter(p => p.source === 'crypto_scanner' && (p.quantity || 0) > 0).length;
+        if (scannerOpenCount >= maxPositions) {
+          const reason = `Crypto scanner: max_positions (${maxPositions}) doldu`;
+          assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason });
+          logDecision({ ...decisionData, filters: filterLog, decision: 'hold', failReason: reason });
+          continue;
+        }
       }
 
       // Risk check — re-evaluated here so cash state reflects prior buys in this cycle
