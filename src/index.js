@@ -207,6 +207,11 @@ async function runCycle() {
   let state = loadState();
   state = resetDailyCounters(state);
 
+  // Sync AI budget limits from config (so UI/config changes take effect immediately)
+  if (!state.ai_usage) state.ai_usage = {};
+  state.ai_usage.daily_limit      = config.ai?.daily_call_limit   ?? 200;
+  state.ai_usage.monthly_budget_usd = config.ai?.monthly_budget_usd ?? 10;
+
   try {
     // 3. Get market state (cached or fresh)
     const prevMarketState = state.market_state?.state || null;
