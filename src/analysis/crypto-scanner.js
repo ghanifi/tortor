@@ -22,7 +22,7 @@ async function fetchCryptoHistory1H(yahooSymbol) {
     .map((c, i) => ({
       c, h: (quote.high  || [])[i],
       l:    (quote.low   || [])[i],
-      v:    (quote.volume|| [])[i] ?? 0,
+      v:    (() => { const raw = (quote.volume || [])[i]; return (raw == null || isNaN(raw)) ? 0 : raw; })(),
     }))
     .filter(d => d.c != null && d.h != null && d.l != null);
   return {
@@ -103,6 +103,7 @@ function scoreCoin(hist, btcHist) {
 
   // ── Hacim Patlaması (max 25) ────────────────────────────────────────────────
   const surgeRatio = calcVolumeSurge(volumes) ?? 1.5;
+  // Score floor is 1.5× — coins below this are filtered out before scoring; no config coupling needed
   const volumePts  = Math.round((clamp(surgeRatio, 1.5, 5) - 1.5) / (5 - 1.5) * 25);
 
   // ── Trend Gücü / ADX (max 20) ──────────────────────────────────────────────
@@ -133,7 +134,7 @@ function scoreCoin(hist, btcHist) {
     scores: { rs: rsPts, volume: volumePts, adx: adxPts, btcStrength: btcStrengthPts, rsi: rsiPts },
     adx,
     rsi: rsi ?? null,
-    surgRatio: surgeRatio,
+    surgeRatio,
     rs7d,
     trend: 'BULL',
   };
@@ -157,26 +158,20 @@ async function runCryptoScan(cryptoConfig = {}) {
 
   if (!enabled) return [];
 
-  let histories;
-  try {
-    histories = await fetchAllCryptoHistories();
-  } catch (err) {
-    console.warn('[CryptoScanner] Veri çekme hatası:', err.message);
-    return [];
-  }
+  const histories = await fetchAllCryptoHistories();
 
   const btcHist = histories['BTC'];
 
-  // BTC gate
-  if (btc_ema_gate) {
-    if (!btcHist) {
-      console.warn('[CryptoScanner] BTC verisi yok — gate açık sayılamaz, scan atlandı');
-      return [];
-    }
-    if (!btcEmaGate(btcHist.closes)) {
-      console.log('[CryptoScanner] BTC < EMA50(1H) — bear market gate, yeni alım yok');
-      return [];
-    }
+  // BTC data is required for RS scoring regardless of gate setting
+  if (!btcHist) {
+    console.warn('[CryptoScanner] BTC verisi yok — RS skoru hesaplanamaz, scan atlandı');
+    return [];
+  }
+
+  // BTC EMA50 gate
+  if (btc_ema_gate && !btcEmaGate(btcHist.closes)) {
+    console.log('[CryptoScanner] BTC < EMA50(1H) — bear market gate, yeni alım yok');
+    return [];
   }
 
   const candidates = [];
@@ -191,8 +186,8 @@ async function runCryptoScan(cryptoConfig = {}) {
     const surgeRatio = calcVolumeSurge(hist.volumes);
     if (surgeRatio === null || surgeRatio < volume_surge_multiplier) continue;
 
-    const result = scoreCoin(hist, btcHist || hist);
-    if (result.score < min_score) continue;
+    const result = scoreCoin(hist, btcHist);
+    if (!Number.isFinite(result.score) || result.score < min_score) continue;
 
     candidates.push({ symbol: etoro, ...result });
   }
