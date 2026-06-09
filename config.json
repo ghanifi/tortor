@@ -28,7 +28,7 @@
     "risk_per_trade_pct": 0.75,
     "atr_stop_multiplier": 2.0,
     "atr_period": 14,
-    "adx_threshold": 20,
+    "adx_threshold": 15,
     "entry_score": 63,
     "strong_buy_score": 85,
     "correlation_max": 0.85,
