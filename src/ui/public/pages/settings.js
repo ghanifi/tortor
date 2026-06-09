@@ -18,6 +18,7 @@ window.SettingsPage = {
       const safety = config.safety || {};
       const strategy = config.strategy || {};
       const ai = config.ai || {};
+      const cs = config.crypto_scanner || {};
 
       container.innerHTML = `
         <!-- Watchlist -->
@@ -91,6 +92,47 @@ window.SettingsPage = {
           <div style="color:var(--muted);font-size:11px;margin-top:8px">
             <b>gate:</b> tüm filtreler geçince AI onaylar/reddeder &nbsp;|&nbsp;
             <b>override:</b> min skoru aşan near-miss'ler için AI BUY diyebilir
+          </div>
+        </div>
+
+        <!-- Crypto Scanner -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-title">🔍 Crypto Scanner</div>
+          <div style="color:var(--muted);font-size:11px;margin-bottom:12px">
+            Her döngüde ~45 kripto tarar, RS+Hacim+ADX+BTCgücü+RSI skorlar, top N adayı otomatik alır.
+          </div>
+          <div class="field-row">
+            <span class="field-label">Scanner aktif</span>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input id="cs-enabled" type="checkbox" ${cs.enabled !== false ? 'checked' : ''}>
+              <span style="font-size:12px;color:var(--muted)">açık</span>
+            </label>
+          </div>
+          <div class="grid-2" style="margin-top:8px">
+            <div>
+              <div class="field-row">
+                <span class="field-label" title="Aynı anda açık tutulacak max crypto scanner pozisyon sayısı">Max pozisyon</span>
+                <input id="cs-max-positions" class="input-field small" type="number" value="${cs.max_positions ?? 3}">
+              </div>
+              <div class="field-row">
+                <span class="field-label" title="Bu skoru geçen coinler alınır (0-100)">Min skor</span>
+                <input id="cs-min-score" class="input-field small" type="number" value="${cs.min_score ?? 65}">
+                <span style="color:var(--subtle);font-size:11px">/100</span>
+              </div>
+            </div>
+            <div>
+              <div class="field-row">
+                <span class="field-label" title="Kaç coin alım adayı olarak seçilir">Top N</span>
+                <input id="cs-top-n" class="input-field small" type="number" value="${cs.top_n ?? 5}">
+              </div>
+              <div class="field-row">
+                <span class="field-label" title="BTC 1H fiyatı EMA50 altındaysa alım yok">BTC EMA gate</span>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                  <input id="cs-btc-gate" type="checkbox" ${cs.btc_ema_gate !== false ? 'checked' : ''}>
+                  <span style="font-size:12px;color:var(--muted)">aktif</span>
+                </label>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -281,7 +323,8 @@ window.SettingsPage = {
     const numericIds = ['entry-score', 'strong-buy-score', 'ai-min-score', 'ai-daily-limit',
                         'min-cash', 'max-exposure', 'drawdown-stop', 'cooldown', 'max-daily',
                         'adx-threshold', 'correlation-max', 'breadth-min-sectors',
-                        'earnings-days-before', 'earnings-days-after'];
+                        'earnings-days-before', 'earnings-days-after',
+                        'cs-max-positions', 'cs-min-score', 'cs-top-n'];
     for (const id of numericIds) {
       const val = parseFloat(document.getElementById(id).value);
       if (isNaN(val)) {
@@ -325,6 +368,14 @@ window.SettingsPage = {
       ai: {
         ...this._config.ai,
         daily_call_limit: parseInt(document.getElementById('ai-daily-limit').value, 10),
+      },
+      crypto_scanner: {
+        ...this._config.crypto_scanner,
+        enabled:       document.getElementById('cs-enabled').checked,
+        max_positions: parseInt(document.getElementById('cs-max-positions').value, 10),
+        min_score:     parseInt(document.getElementById('cs-min-score').value, 10),
+        top_n:         parseInt(document.getElementById('cs-top-n').value, 10),
+        btc_ema_gate:  document.getElementById('cs-btc-gate').checked,
       },
       strategy: {
         ...this._config.strategy,

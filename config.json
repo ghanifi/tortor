@@ -75,5 +75,13 @@
     "min_cash_reserve": 100,
     "max_exposure_pct": 30,
     "dry_run": false
+  },
+  "crypto_scanner": {
+    "enabled": true,
+    "max_positions": 3,
+    "min_score": 65,
+    "btc_ema_gate": true,
+    "volume_surge_multiplier": 1.5,
+    "top_n": 5
   }
 }

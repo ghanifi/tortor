@@ -33,7 +33,7 @@ function getEtoroClient() {
 }
 
 // Config helpers — never expose encrypted fields
-const CONFIG_PUBLIC_FIELDS = ['watchlist', 'thresholds', 'budget', 'safety', 'strategy', 'ai'];
+const CONFIG_PUBLIC_FIELDS = ['watchlist', 'thresholds', 'budget', 'safety', 'strategy', 'ai', 'crypto_scanner'];
 function readPublicConfig() {
   const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
   const result = {};
