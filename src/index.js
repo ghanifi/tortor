@@ -126,8 +126,8 @@ async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, sta
   });
 
   if (budget <= 0) {
-    console.warn(`[Trade] Buy ${symbol} skipped: budget=0 (cash=$${(state.cash||0).toFixed(2)}, reserve=$${minReserve}, atr=${atr})`);
-    return { state, success: false, failReason: `Bütçe yetersiz ($${(state.cash||0).toFixed(2)} nakit, $${minReserve} rezerv)` };
+    console.log(`[Trade] [ERROR] BUY ${symbol} L${tranche} BAŞARISIZ — bütçe=0 (nakit=$${(state.cash||0).toFixed(2)}, rezerv=$${minReserve}, ATR=${atr?.toFixed(2) ?? 'N/A'})`);
+    return { state, success: false, failReason: `Bütçe yetersiz (nakit=$${(state.cash||0).toFixed(2)}, rezerv=$${minReserve}, ATR=${atr?.toFixed(2) ?? 'N/A'})` };
   }
 
   const qty = budget / currentPrice;
@@ -189,12 +189,10 @@ async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, sta
       stopPrice: state.positions[symbol]?.stop_price ?? null,
       reason, scores: scores || {} });
 
-    if (config.safety?.dry_run) {
-      console.log(`[DRY RUN] BUY ${symbol} L${tranche} $${budget.toFixed(2)}: ${reason}`);
-    }
+    console.log(`[Trade] BUY ${symbol} L${tranche} $${budget.toFixed(2)} @ $${currentPrice.toFixed(2)}${config.safety?.dry_run ? ' [DRY RUN]' : ''}`);
     return { state, success: true, failReason: null };
   } catch (err) {
-    console.error(`[Trade] Buy ${symbol} failed:`, err.message);
+    console.log(`[Trade] [ERROR] BUY ${symbol} L${tranche} BAŞARISIZ — ${err.message}`);
     return { state, success: false, failReason: `eToro API hatası: ${err.message}` };
   }
 }
