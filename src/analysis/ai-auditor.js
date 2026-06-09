@@ -40,7 +40,7 @@ async function auditTrade({ symbol, price, reason, scores, model = 'claude-haiku
   // Everything after the first word is the reason
   const auditReason = text.replace(/^(BUY|SKIP)[.:,\s]*/i, '').trim() || text;
 
-  return { verdict, reason: auditReason, costUsd: ESTIMATED_COST_USD };
+  return { verdict, reason: auditReason, prompt, costUsd: ESTIMATED_COST_USD };
 }
 
 /**

@@ -148,7 +148,9 @@ window.LogPage = {
                 <td style="padding:6px 8px;text-align:right;cursor:default" title="${d.tech_score != null ? `RSI:${d.tech_rsi_pts ?? '?'}  MACD:${d.tech_macd_pts ?? '?'}  Vol:${d.tech_vol_pts ?? '?'}  ATR:${d.tech_atr_pts ?? '?'}` : ''}">${fmtNum(d.tech_score, 0)}</td>
                 <td style="padding:6px 8px;text-align:right">${fmtNum(d.rsi)}</td>
                 <td style="padding:6px 8px;text-align:center;white-space:nowrap;letter-spacing:2px">
-                  ${fmtFilter(f.market_state)}${fmtFilter(f.breadth)}${fmtFilter(f.trend)}${fmtFilter(f.adx)}${fmtFilter(f.rs_score)}${fmtFilter(f.tech_score)}${fmtFilter(f.earnings)}${fmtFilter(f.correlation)}${fmtFilter(f.ai_audit)}
+                  ${fmtFilter(f.market_state)}${fmtFilter(f.breadth)}${fmtFilter(f.trend)}${fmtFilter(f.adx)}${fmtFilter(f.rs_score)}${fmtFilter(f.tech_score)}${fmtFilter(f.earnings)}${fmtFilter(f.correlation)}${d.ai_prompt
+                    ? `<span style="cursor:pointer;letter-spacing:0" onclick="LogPage.showAiPrompt(${JSON.stringify(JSON.stringify({ prompt: d.ai_prompt, verdict: d.ai_verdict, reason: d.ai_reason }))})" title="AI sorgusunu gör">${fmtFilter(f.ai_audit)}🔍</span>`
+                    : fmtFilter(f.ai_audit)}
                 </td>
                 <td style="padding:6px 8px">${fmtDecision(d)}</td>
                 <td style="padding:6px 8px;color:var(--muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(d.fail_reason || d.ai_reason || '').replace(/"/g, '&quot;')}">${d.fail_reason || d.ai_reason || '—'}</td>
@@ -186,6 +188,32 @@ window.LogPage = {
     };
 
     es.onerror = () => { statusEl.textContent = '● Bağlantı kesildi'; statusEl.style.color = 'var(--red)'; };
+  },
+
+  showAiPrompt(jsonStr) {
+    const data = JSON.parse(jsonStr);
+    const existing = document.getElementById('ai-prompt-modal');
+    if (existing) existing.remove();
+    const modal = document.createElement('div');
+    modal.id = 'ai-prompt-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:center;justify-content:center;padding:24px';
+    modal.innerHTML = `
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;max-width:600px;width:100%;max-height:80vh;overflow-y:auto;padding:20px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div style="font-weight:600;font-size:13px">🤖 AI Sorgusu</div>
+          <button onclick="document.getElementById('ai-prompt-modal').remove()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px">✕</button>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Gönderilen prompt:</div>
+        <pre style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:12px;font-size:11px;white-space:pre-wrap;word-break:break-word;color:var(--text)">${(data.prompt || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+          <span style="font-size:11px;color:var(--muted)">Yanıt: </span>
+          <span style="font-weight:600;color:${data.verdict === 'BUY' ? 'var(--green)' : 'var(--red)'}">${data.verdict ?? '—'}</span>
+          <span style="font-size:11px;color:var(--muted);margin-left:8px">${(data.reason || '').replace(/</g,'&lt;')}</span>
+        </div>
+      </div>
+    `;
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+    document.body.appendChild(modal);
   },
 
   clearDisplay() {

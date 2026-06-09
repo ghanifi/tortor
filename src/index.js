@@ -487,6 +487,7 @@ async function runCycle() {
                     state = recordCall(state, audit.costUsd);
                     decisionData.aiVerdict = audit.verdict;
                     decisionData.aiReason  = audit.reason;
+                    decisionData.aiPrompt  = audit.prompt;
                     if (audit.verdict === 'BUY') {
                       filterLog.final_score = 'AI_OVERRIDE';
                       filterLog.ai_audit    = 'PASS';
@@ -604,6 +605,7 @@ async function runCycle() {
             state = recordCall(state, audit.costUsd);
             aiVerdict = audit.verdict;
             aiReason  = audit.reason;
+            decisionData.aiPrompt = audit.prompt;
             if (audit.verdict === 'SKIP') {
               const reason = `AI Denetçi: ${audit.reason}`;
               assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason });

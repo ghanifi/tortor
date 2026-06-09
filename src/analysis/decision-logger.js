@@ -55,6 +55,7 @@ function ensureDir() {
  * @param {string|null} r.failReason
  * @param {string|null} r.aiVerdict  'BUY' | 'SKIP' | null (null = not called)
  * @param {string|null} r.aiReason
+ * @param {string|null} r.aiPrompt  full prompt sent to AI
  */
 function logDecision(r) {
   ensureDir();
@@ -89,6 +90,7 @@ function logDecision(r) {
     fail_reason:      r.failReason ?? null,
     ai_verdict:       r.aiVerdict  ?? null,
     ai_reason:        r.aiReason   ?? null,
+    ai_prompt:        r.aiPrompt   ?? null,
   };
   fs.appendFileSync(DECISIONS_FILE, JSON.stringify(record) + '\n');
 }
