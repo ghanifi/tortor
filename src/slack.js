@@ -19,7 +19,7 @@ class SlackNotifier {
   }
 
   formatCheckReport({ layer, cash, portfolioValue, assets, totalPnl, totalPnlPct, aiUsage, risk }) {
-    const time = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+    const time = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Istanbul' });
     const assetLines = assets.map(a => {
       let status = '⏳ bekle';
       if (a.action === 'buy') status = '🟢 ALINDI';
