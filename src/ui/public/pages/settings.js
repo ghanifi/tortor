@@ -17,6 +17,7 @@ window.SettingsPage = {
       const budget = config.budget || {};
       const safety = config.safety || {};
       const strategy = config.strategy || {};
+      const ai = config.ai || {};
 
       container.innerHTML = `
         <!-- Watchlist -->
@@ -81,6 +82,11 @@ window.SettingsPage = {
                 <span style="color:var(--subtle);font-size:11px">/100</span>
               </div>
             </div>
+          </div>
+          <div class="field-row" style="margin-top:8px">
+            <span class="field-label" title="Günlük maksimum AI sorgu sayısı">AI günlük limit</span>
+            <input id="ai-daily-limit" class="input-field small" type="number" value="${ai.daily_call_limit ?? 200}">
+            <span style="color:var(--subtle);font-size:11px">istek/gün</span>
           </div>
           <div style="color:var(--muted);font-size:11px;margin-top:8px">
             <b>gate:</b> tüm filtreler geçince AI onaylar/reddeder &nbsp;|&nbsp;
@@ -272,7 +278,7 @@ window.SettingsPage = {
     const statusEl = document.getElementById('save-status');
 
     // Validate all numeric inputs before saving
-    const numericIds = ['entry-score', 'strong-buy-score', 'ai-min-score',
+    const numericIds = ['entry-score', 'strong-buy-score', 'ai-min-score', 'ai-daily-limit',
                         'min-cash', 'max-exposure', 'drawdown-stop', 'cooldown', 'max-daily',
                         'adx-threshold', 'correlation-max', 'breadth-min-sectors',
                         'earnings-days-before', 'earnings-days-after'];
@@ -315,6 +321,10 @@ window.SettingsPage = {
             parseFloat(row.querySelector('.pa-amount').value)
           ])
         )
+      },
+      ai: {
+        ...this._config.ai,
+        daily_call_limit: parseInt(document.getElementById('ai-daily-limit').value, 10),
       },
       strategy: {
         ...this._config.strategy,
