@@ -38,14 +38,14 @@ describe('getExchangeBenchmark', () => {
     expect(getExchangeBenchmark('BP.L')).toBe('^FTSE');
   });
 
-  test('known crypto tickers → BTC-USD', () => {
-    expect(getExchangeBenchmark('BTC')).toBe('BTC-USD');
-    expect(getExchangeBenchmark('ETH')).toBe('BTC-USD');
-    expect(getExchangeBenchmark('SOL')).toBe('BTC-USD');
+  test('BTC uses SPY as benchmark (vs equities, not itself)', () => {
+    expect(getExchangeBenchmark('BTC')).toBe('SPY');
+    expect(getExchangeBenchmark('BTC-USD')).toBe('SPY');
   });
 
-  test('symbols ending in -USD → BTC-USD', () => {
-    expect(getExchangeBenchmark('BTC-USD')).toBe('BTC-USD');
+  test('altcoins use BTC-USD as benchmark', () => {
+    expect(getExchangeBenchmark('ETH')).toBe('BTC-USD');
+    expect(getExchangeBenchmark('SOL')).toBe('BTC-USD');
     expect(getExchangeBenchmark('ETH-USD')).toBe('BTC-USD');
   });
 

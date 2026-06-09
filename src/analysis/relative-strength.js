@@ -10,7 +10,8 @@ const CRYPTO_SYMBOLS = new Set(['BTC', 'ETH', 'XRP', 'ADA', 'SOL', 'DOT', 'BNB',
 
 function getExchangeBenchmark(symbol) {
   if (symbol.endsWith('.L')) return '^FTSE';
-  if (CRYPTO_SYMBOLS.has(symbol) || symbol.endsWith('-USD')) return 'BTC-USD';
+  if (symbol === 'BTC' || symbol === 'BTC-USD') return 'SPY';      // BTC vs equities
+  if (CRYPTO_SYMBOLS.has(symbol) || symbol.endsWith('-USD')) return 'BTC-USD'; // alts vs BTC
   return 'SPY';
 }
 
