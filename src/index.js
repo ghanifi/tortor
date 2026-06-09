@@ -125,7 +125,10 @@ async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, sta
     minCashReserve:    minReserve,
   });
 
-  if (budget <= 0) return state;
+  if (budget <= 0) {
+    console.warn(`[Trade] Buy ${symbol} skipped: budget=0 (cash=$${(state.cash||0).toFixed(2)}, reserve=$${minReserve}, atr=${atr})`);
+    return { state, success: false, failReason: `Bütçe yetersiz ($${(state.cash||0).toFixed(2)} nakit, $${minReserve} rezerv)` };
+  }
 
   const qty = budget / currentPrice;
 
@@ -189,11 +192,11 @@ async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, sta
     if (config.safety?.dry_run) {
       console.log(`[DRY RUN] BUY ${symbol} L${tranche} $${budget.toFixed(2)}: ${reason}`);
     }
+    return { state, success: true, failReason: null };
   } catch (err) {
     console.error(`[Trade] Buy ${symbol} failed:`, err.message);
+    return { state, success: false, failReason: `eToro API hatası: ${err.message}` };
   }
-
-  return state;
 }
 
 // ── Main cycle ────────────────────────────────────────────────────────────────
@@ -662,7 +665,7 @@ async function runCycle() {
         ? `[STRONG BUY:${decisionData.finalScore}] ${decision.reason}`
         : `[Score:${decisionData.finalScore}] ${decision.reason}`;
 
-      state = await executeBuy({
+      const buyResult = await executeBuy({
         symbol, pos, tranche: decision.tranche,
         reason: buyReason, currentPrice,
         atr: assetRegime.atr, state,
@@ -679,8 +682,15 @@ async function runCycle() {
           pyramid_level: decision.tranche,
         },
       });
-      assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'buy', reason: buyReason });
-      logDecision({ ...decisionData, filters: filterLog, decision: 'buy', tranche: decision.tranche, failReason: null });
+      state = buyResult.state;
+      if (buyResult.success) {
+        assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'buy', reason: buyReason });
+        logDecision({ ...decisionData, filters: filterLog, decision: 'buy', tranche: decision.tranche, failReason: null });
+      } else {
+        const execFailReason = buyResult.failReason || 'Alım başarısız';
+        assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: execFailReason });
+        logDecision({ ...decisionData, filters: filterLog, decision: 'hold', failReason: execFailReason });
+      }
     }
 
     // 8. Save decisions for UI display
