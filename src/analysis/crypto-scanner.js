@@ -62,7 +62,7 @@ function passTrendFilter(closes, highs, lows) {
   if (closes.length < 200) return false;
   const ema50  = calculateEMA(closes, 50);
   const ema200 = calculateEMA(closes, 200);
-  if (!ema50 || !ema200 || ema50 <= ema200) return false;
+  if (ema50 === null || ema200 === null || ema50 <= ema200) return false;
   const adx = calculateADX(highs, lows, closes, 14);
   return adx !== null && adx > 20;
 }
