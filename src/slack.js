@@ -73,12 +73,13 @@ class SlackNotifier {
     return `🚫 BLOKE — ${symbol} alımı engellendi\n   Neden: ${reason}\n   Fiyat: $${price}`;
   }
 
-  formatError({ message, lastSuccess }) {
+  formatError({ message, lastSuccess, retryIn = 10, attempt = 1 }) {
+    const attemptStr = attempt > 1 ? ` (${attempt}. deneme)` : '';
     return [
-      `🚨 HATA — Tüm katmanlar başarısız`,
+      `🚨 HATA — eToro API erişilemiyor${attemptStr}`,
       `   ${message}`,
       `   Son başarılı: ${lastSuccess || 'bilinmiyor'}`,
-      `   30 dk sonra tekrar denenecek`
+      `   ${retryIn} dk sonra tekrar denenecek`
     ].join('\n');
   }
 

@@ -31,6 +31,8 @@ let config = null;
 let slack = null;
 let etoroClient = null;
 let isRunning = false;
+let consecutiveErrors = 0;        // suppress repeated Slack alerts on persistent outage
+const ERROR_SLACK_INTERVAL = 3;   // alert every Nth failure, not every cycle
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -290,8 +292,20 @@ async function runCycle() {
     let portfolioData = null;
     try {
       portfolioData = await etoroClient.getPortfolioPositions();
+      consecutiveErrors = 0; // reset on success
     } catch (err) {
-      await slack.send(slack.formatError({ message: err.message, lastSuccess: state.last_check }));
+      consecutiveErrors++;
+      // Alert on first failure, then every ERROR_SLACK_INTERVAL cycles to avoid spam
+      if (consecutiveErrors === 1 || consecutiveErrors % ERROR_SLACK_INTERVAL === 0) {
+        const intervalMin = config.strategy?.check_interval_minutes || 10;
+        await slack.send(slack.formatError({
+          message: err.message,
+          lastSuccess: state.last_check,
+          retryIn: intervalMin,
+          attempt: consecutiveErrors,
+        }));
+      }
+      console.error(`[Bot] eToro API hatası (${consecutiveErrors}. deneme):`, err.message);
       saveState(state);
       isRunning = false;
       return;
