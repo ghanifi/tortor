@@ -133,21 +133,39 @@ class EToroPublicAPI {
     return (rate.bid + rate.ask) / 2;
   }
 
+  // Returns daily closing price history for an instrument
+  async getClosingPriceHistory(instrumentId) {
+    const res = await this.client.get('/api/v1/market-data/instruments/history/closing-price', {
+      headers: this._headers(),
+      params: { instrumentIds: instrumentId },
+    });
+    return res.data;
+  }
+
+  // Returns OHLCV candles for an instrument
+  // direction: 'asc' or 'desc', interval: e.g. 'OneHour', 'OneDay', count: max 1000
+  async getCandles(instrumentId, { direction = 'desc', interval = 'OneDay', count = 365 } = {}) {
+    const res = await this.client.get(
+      `/api/v1/market-data/instruments/${instrumentId}/history/candles/${direction}/${interval}/${count}`,
+      { headers: this._headers() }
+    );
+    return res.data;
+  }
+
   // ── Trading ────────────────────────────────────────────────────────────────
 
   // Buy: opens a new position by amount (USD)
   // Returns { positionId, openRate, orderId }
-  async buyAsset({ symbol, amount }) {
+  async buyAsset({ symbol, amount, leverage = 1 }) {
     const instrumentId = await this.getInstrumentId(symbol);
     if (!instrumentId) throw new Error(`Instrument not found: ${symbol}`);
 
-    const res = await this.client.post('/api/v2/trading/execution/orders', {
-      instrumentID: instrumentId,
-      isBuy: true,
-      leverage: 1,
-      amount,
-      takeProfitRate: null,
-      stopLossRate: null,
+    // Body must be PascalCase per eToro API spec
+    const res = await this.client.post('/api/v1/trading/execution/market-open-orders/by-amount', {
+      InstrumentID: instrumentId,
+      IsBuy: true,
+      Leverage: leverage,
+      Amount: amount,
     }, { headers: this._headers() });
 
     const data = res.data;
