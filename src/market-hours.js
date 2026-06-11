@@ -1,7 +1,7 @@
 'use strict';
 
 const CRYPTO_SYMBOLS = new Set([
-  'BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'BNB', 'AVAX', 'DOT', 'LINK',
+  'BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE', 'DOGECOIN', 'BNB', 'AVAX', 'DOT', 'LINK',
   'LTC', 'MATIC', 'UNI', 'ATOM', 'FTM', 'NEAR', 'ALGO', 'VET', 'SHIB', 'TRX'
 ]);
 

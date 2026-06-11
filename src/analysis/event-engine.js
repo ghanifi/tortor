@@ -14,7 +14,7 @@ const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 // Known crypto base tickers — earnings check skipped for these
-const CRYPTO_SYMBOLS = new Set(['BTC', 'ETH', 'SOL', 'BNB', 'ADA', 'XRP', 'DOGE', 'AVAX', 'DOT', 'MATIC']);
+const CRYPTO_SYMBOLS = new Set(['BTC', 'ETH', 'SOL', 'BNB', 'ADA', 'XRP', 'DOGE', 'DOGECOIN', 'AVAX', 'DOT', 'MATIC']);
 
 const earningsCache = {};
 

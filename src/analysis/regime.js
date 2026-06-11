@@ -112,7 +112,7 @@ function detectAssetRegimeV3(closes, highs, lows) {
 
 // Yahoo Finance symbol overrides for non-standard tickers
 const YAHOO_SYMBOL_MAP = {
-  // Crypto
+  // Crypto — eToro display names → Yahoo Finance tickers
   'BTC': 'BTC-USD',
   'ETH': 'ETH-USD',
   'XRP': 'XRP-USD',
@@ -121,6 +121,8 @@ const YAHOO_SYMBOL_MAP = {
   'DOT': 'DOT-USD',
   'BNB': 'BNB-USD',
   'AVAX': 'AVAX-USD',
+  'DOGECOIN': 'DOGE-USD',  // eToro returns "DOGECOIN" as instrument symbol
+  'DOGE': 'DOGE-USD',
   // London Stock Exchange (eToro suffix .L → Yahoo suffix .L)
   'RR.L': 'RR.L',
   'VOD.L': 'VOD.L',
