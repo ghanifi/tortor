@@ -159,7 +159,7 @@ app.post('/api/risk/reset', (req, res) => {
 app.get('/api/portfolio', (req, res) => {
   const state = loadState();
   const positions = Object.entries(state.positions)
-    .filter(([, pos]) => pos.quantity > 0)
+    .filter(([symbol, pos]) => pos.quantity > 0 && !/^\d+$/.test(symbol))  // skip numeric phantom keys
     .map(([symbol, pos]) => {
       const currentPrice = state.prices?.[symbol] ?? null;
       const pnl = (currentPrice && pos.avg_cost)
@@ -244,7 +244,8 @@ app.get('/api/history', (req, res) => {
   if (!fs.existsSync(TRADES_LOG)) return res.json([]);
   const trades = fs.readFileSync(TRADES_LOG, 'utf8').trim().split('\n').filter(Boolean)
     .map(l => { try { return JSON.parse(l); } catch { return null; } })
-    .filter(Boolean)
+    // Exclude ML data-lake records (type: 'entry'/'exit') — show only real trade actions
+    .filter(r => r && (r.action === 'buy' || r.action === 'sell'))
     .reverse();
   res.json(trades);
 });

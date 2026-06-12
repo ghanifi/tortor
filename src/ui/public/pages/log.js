@@ -103,6 +103,11 @@ window.LogPage = {
     const fmtNum = (v, dec = 1) => v != null ? Number(v).toFixed(dec) : '—';
     const fmtPct = (v) => v != null ? (v >= 0 ? '+' : '') + Number(v).toFixed(1) + '%' : '—';
 
+    // Store AI payloads in a side-array keyed by row index.
+    // This avoids embedding JSON with double-quotes inside onclick="..." HTML attributes,
+    // which would break the attribute parser.
+    this._aiData = [];
+
     const html = `
       <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:12px">
@@ -126,12 +131,20 @@ window.LogPage = {
             </tr>
           </thead>
           <tbody>
-            ${rows.map(d => {
+            ${rows.map((d, idx) => {
               const f = d.filters || {};
               const ts = d.ts ? new Date(d.ts).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '—';
               const date = d.ts ? new Date(d.ts).toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit' }) : '';
               const rowColor = d.decision === 'buy' ? 'background:rgba(0,255,0,0.03)' :
                                d.decision === 'sell' ? 'background:rgba(255,0,0,0.03)' : '';
+
+              // Store AI payload by index — no JSON in onclick attribute
+              let aiBtn = fmtFilter(f.ai_audit);
+              if (d.ai_prompt) {
+                this._aiData[idx] = { prompt: d.ai_prompt, verdict: d.ai_verdict, reason: d.ai_reason };
+                aiBtn = `<span style="cursor:pointer;letter-spacing:0" onclick="LogPage.showAiPrompt(${idx})" title="AI sorgusunu gör">${fmtFilter(f.ai_audit)}🔍</span>`;
+              }
+
               return `<tr style="border-bottom:1px solid var(--border);${rowColor}">
                 <td style="padding:6px 8px;white-space:nowrap;color:var(--muted)">${date}<br>${ts}</td>
                 <td style="padding:6px 8px;font-weight:600">${d.symbol || '—'}</td>
@@ -148,9 +161,7 @@ window.LogPage = {
                 <td style="padding:6px 8px;text-align:right;cursor:default" title="${d.tech_score != null ? `RSI:${d.tech_rsi_pts ?? '?'}  MACD:${d.tech_macd_pts ?? '?'}  Vol:${d.tech_vol_pts ?? '?'}  ATR:${d.tech_atr_pts ?? '?'}` : ''}">${fmtNum(d.tech_score, 0)}</td>
                 <td style="padding:6px 8px;text-align:right">${fmtNum(d.rsi)}</td>
                 <td style="padding:6px 8px;text-align:center;white-space:nowrap;letter-spacing:2px">
-                  ${fmtFilter(f.market_state)}${fmtFilter(f.breadth)}${fmtFilter(f.trend)}${fmtFilter(f.adx)}${fmtFilter(f.rs_score)}${fmtFilter(f.tech_score)}${fmtFilter(f.earnings)}${fmtFilter(f.correlation)}${d.ai_prompt
-                    ? `<span style="cursor:pointer;letter-spacing:0" onclick="LogPage.showAiPrompt(${JSON.stringify(JSON.stringify({ prompt: d.ai_prompt, verdict: d.ai_verdict, reason: d.ai_reason }))})" title="AI sorgusunu gör">${fmtFilter(f.ai_audit)}🔍</span>`
-                    : fmtFilter(f.ai_audit)}
+                  ${fmtFilter(f.market_state)}${fmtFilter(f.breadth)}${fmtFilter(f.trend)}${fmtFilter(f.adx)}${fmtFilter(f.rs_score)}${fmtFilter(f.tech_score)}${fmtFilter(f.earnings)}${fmtFilter(f.correlation)}${aiBtn}
                 </td>
                 <td style="padding:6px 8px">${fmtDecision(d)}</td>
                 <td style="padding:6px 8px;color:var(--muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(d.fail_reason || d.ai_reason || '').replace(/"/g, '&quot;')}">${d.fail_reason || d.ai_reason || '—'}</td>
@@ -190,8 +201,9 @@ window.LogPage = {
     es.onerror = () => { statusEl.textContent = '● Bağlantı kesildi'; statusEl.style.color = 'var(--red)'; };
   },
 
-  showAiPrompt(jsonStr) {
-    const data = JSON.parse(jsonStr);
+  showAiPrompt(idx) {
+    const data = this._aiData[idx];
+    if (!data) return;
     const existing = document.getElementById('ai-prompt-modal');
     if (existing) existing.remove();
     const modal = document.createElement('div');

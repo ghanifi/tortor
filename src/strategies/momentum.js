@@ -63,34 +63,57 @@ function decideMomentum({ pyramidLevel, currentPrice, entryPrice, level2Price, a
  * Returns first trigger that fires, or { exit: false }.
  *
  * @param {object} params
- * @param {{ stop_price?: number, pyramid_level?: number }} params.pos
+ * @param {{ stop_price?: number, pyramid_level?: number, entry_at?: string }} params.pos
  * @param {number} params.currentPrice
  * @param {{ trend: string }} params.assetRegime
  * @param {string} params.currentMarketState
  * @param {string|null} params.prevMarketState
+ * @param {number} [params.minHoldMinutes=60] - minimum hold time before trend-break exit fires
  * @returns {{ exit: boolean, portion?: number, reason?: string }}
  */
-function checkExitTrigger({ pos, currentPrice, assetRegime, currentMarketState, prevMarketState }) {
-  // Trigger 4 (highest priority): PANIC emergency exit
+function checkExitTrigger({ pos, currentPrice, assetRegime, currentMarketState, prevMarketState, minHoldMinutes = 60, inProfit = false }) {
+  // PANIC: tek istisna — her koşulda acil çıkış
   if (currentMarketState === 'PANIC') {
     return { exit: true, portion: 1, reason: 'Market state: PANIC → tüm pozisyon kapatıldı' };
   }
 
-  // Trigger 1: ATR stop (hard floor)
+  // TEMEL KURAL: Zararda satış yasak.
+  // Fiyat ort. maliyetin altındaysa hiçbir çıkış tetiklenmez — pozisyon tutulur.
+  // (avg_cost bilinmiyorsa bu blok atlanır, aşağıdaki tetikleyiciler çalışır.)
+  if (pos.avg_cost && currentPrice < pos.avg_cost) {
+    return {
+      exit: false,
+      _skipped: `Zararda ($${currentPrice.toFixed(2)} < ort. maliyet $${pos.avg_cost.toFixed(2)}) — zarar realizasyonu engellendi`,
+    };
+  }
+
+  // Trigger 1: ATR trailing stop — karda veya başabaş fiyatta tetiklenir
   if (pos.stop_price && currentPrice < pos.stop_price) {
     return {
       exit: true, portion: 1,
-      reason: `ATR stop tetiklendi ($${pos.stop_price.toFixed(2)})`
+      reason: `ATR stop tetiklendi ($${pos.stop_price.toFixed(2)})`,
     };
   }
 
   // Trigger 2: Trend break (EMA50 < EMA200)
   if (assetRegime.trend !== 'BULL') {
+    const holdMs = pos.entry_at ? Date.now() - new Date(pos.entry_at).getTime() : Infinity;
+    const minHoldMs = minHoldMinutes * 60 * 1000;
+
+    if (holdMs < minHoldMs) {
+      const heldMin = Math.round(holdMs / 60000);
+      return { exit: false, _skipped: `Trend kırıldı ama min hold ${minHoldMinutes}dk (${heldMin}dk tutuldu)` };
+    }
+
+    // Karda ise trend break'i ATR stop'a bırak (kazananları erken kesme)
+    if (inProfit) {
+      return { exit: false, _skipped: `Trend kırıldı ama karda — ATR stop ($${pos.stop_price?.toFixed(2) ?? '?'}) bekliyor` };
+    }
+
     return { exit: true, portion: 1, reason: 'Trend kırıldı (EMA50 < EMA200)' };
   }
 
-  // Trigger 3: Market state degradation
-  // Note: eToro API closes full positions only — no partial sell support
+  // Trigger 3: Piyasa bozulması (RISK_OFF geçişi)
   if (prevMarketState !== 'RISK_OFF' && currentMarketState === 'RISK_OFF') {
     return { exit: true, portion: 1, reason: 'Market state: RISK_OFF → pozisyon kapatıldı' };
   }

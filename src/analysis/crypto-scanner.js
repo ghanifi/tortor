@@ -67,14 +67,24 @@ function passTrendFilter(closes, highs, lows) {
   return adx !== null && adx > 20;
 }
 
-// Filter 2 + scoring input: volume surge ratio = last_bar / mean(prev 20 bars)
-// Returns null if data insufficient or avg is 0
+// Filter 2 + scoring input: volume surge ratio = last_active_bar / mean(prev 20 active bars)
+// Yahoo Finance reports 0 volume for incomplete/unreported bars (especially on weekends).
+// We skip trailing zeros to find the last real trading bar.
 function calcVolumeSurge(volumes) {
-  if (volumes.length < 21) return null;
-  const prev20 = volumes.slice(-21, -1);
-  const avg = prev20.reduce((a, b) => a + b, 0) / 20;
+  // Find last non-zero bar (signal bar)
+  let signalIdx = volumes.length - 1;
+  while (signalIdx >= 0 && volumes[signalIdx] === 0) signalIdx--;
+  if (signalIdx < 20) return null;
+
+  const signalVol = volumes[signalIdx];
+
+  // Find 20 non-zero bars before the signal bar for the baseline average
+  const prevBars = volumes.slice(0, signalIdx).filter(v => v > 0);
+  if (prevBars.length < 10) return null;   // need at least 10 real bars
+  const recent20 = prevBars.slice(-20);
+  const avg = recent20.reduce((a, b) => a + b, 0) / recent20.length;
   if (avg <= 0) return null;
-  return volumes[volumes.length - 1] / avg;
+  return signalVol / avg;
 }
 
 // ── Scoring ───────────────────────────────────────────────────────────────────

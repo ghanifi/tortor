@@ -153,6 +153,7 @@ async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, sta
         level3_price: null,
         stop_price: currentPrice - atrMult * atr,
         atr_at_entry: atr,
+        entry_at: new Date().toISOString(),
       };
     } else if (tranche === 2) {
       state.positions[symbol] = {
@@ -315,9 +316,30 @@ async function runCycle() {
     const rawPositions = portfolioData?.positions || [];
     let cash = portfolioData?.cash || 0;
 
+    // Build instrumentId → real symbol map from existing state (non-numeric keys only)
+    const idToSymbol = {};
+    for (const [k, v] of Object.entries(state.positions)) {
+      if (!/^\d+$/.test(k) && v.instrumentId) idToSymbol[v.instrumentId] = k;
+    }
+
     for (const p of rawPositions) {
-      const sym = p.symbol;
+      let sym = p.symbol;
       if (!sym) continue;
+
+      // If eToro returned a numeric ID instead of a symbol (discover lookup failed),
+      // check if we already know the real symbol for this instrumentId
+      if (/^\d+$/.test(sym) && p.instrumentId && idToSymbol[p.instrumentId]) {
+        const realSym = idToSymbol[p.instrumentId];
+        console.log(`[Portfolio] ${sym} → ${realSym} (instrumentId ${p.instrumentId} eşleşti)`);
+        // Merge numeric-keyed entry into the real symbol entry and delete the stale key
+        if (state.positions[sym]) {
+          const numericEntry = state.positions[sym];
+          state.positions[realSym] = { ...numericEntry, ...state.positions[realSym] };
+          delete state.positions[sym];
+        }
+        sym = realSym;
+      }
+
       if (p.currentPrice) prices[sym] = p.currentPrice;
       const existingSource = state.positions[sym]?.source;
       if (!state.positions[sym]) state.positions[sym] = {};
@@ -328,6 +350,20 @@ async function runCycle() {
         state.positions[sym].avg_cost = p.avgCost;
       }
       if (existingSource) state.positions[sym].source = existingSource;
+
+      // Register new non-numeric symbol in map for subsequent iterations
+      if (!/^\d+$/.test(sym) && p.instrumentId) idToSymbol[p.instrumentId] = sym;
+    }
+
+    // Clean up any remaining numeric-keyed orphans whose instrumentId now maps to a real symbol
+    for (const k of Object.keys(state.positions)) {
+      if (/^\d+$/.test(k)) {
+        const instrId = state.positions[k]?.instrumentId;
+        if (instrId && idToSymbol[instrId]) {
+          console.log(`[Portfolio] Orphan key "${k}" silindi (${idToSymbol[instrId]} ile duplike)`);
+          delete state.positions[k];
+        }
+      }
     }
 
     const configCash = config.budget?.available_cash ?? 0;
@@ -442,12 +478,47 @@ async function runCycle() {
 
       // c. Exit triggers (only for open positions) — executed immediately, not deferred
       if ((pos.quantity || 0) > 0) {
+        const atrMult = config.strategy?.atr_stop_multiplier || 2.0;
+        const atr = assetRegime.atr;
+
+        // Initialize stop for legacy/manual positions that have no stop_price yet
+        if (pos.stop_price == null && atr) {
+          const basePrice = pos.avg_cost || currentPrice;
+          const initStop = basePrice - atrMult * atr;
+          state.positions[symbol].stop_price = initStop;
+          pos = state.positions[symbol];
+          console.log(`[Stop] ${symbol}: stop_price başlatıldı $${initStop.toFixed(2)} (avg $${basePrice.toFixed(2)} - ${atrMult}×ATR $${atr.toFixed(2)})`);
+        }
+
+        // Trail stop upward — never let gains erode back to the original stop level
+        if (pos.stop_price != null && atr) {
+          const trailingStop = currentPrice - atrMult * atr;
+          if (trailingStop > pos.stop_price) {
+            state.positions[symbol].stop_price = trailingStop;
+            pos = state.positions[symbol];
+          }
+        }
+
+        // Breakeven lock — once the position is profitable, the stop must never fall
+        // below avg_cost. This guarantees we never exit a winner at a loss.
+        if (pos.avg_cost && currentPrice > pos.avg_cost && pos.stop_price != null) {
+          if (pos.stop_price < pos.avg_cost) {
+            state.positions[symbol].stop_price = pos.avg_cost;
+            pos = state.positions[symbol];
+          }
+        }
+
+        const minHoldMinutes = config.strategy?.min_hold_minutes ?? 60;
+        const inProfit = pos.avg_cost != null && currentPrice > pos.avg_cost;
         const exitResult = checkExitTrigger({
           pos, currentPrice, assetRegime,
-          currentMarketState, prevMarketState
+          currentMarketState, prevMarketState, minHoldMinutes, inProfit
         });
 
-        if (exitResult.exit) {
+        if (exitResult._skipped) {
+          // Trend broke but min hold period not elapsed — log and continue to entry filters
+          console.log(`[Exit] ${symbol}: ${exitResult._skipped}`);
+        } else if (exitResult.exit) {
           const market = isMarketOpen(symbol);
           if (!market.open && market.exchange !== 'CRYPTO') {
             assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: `Piyasa kapalı (çıkış ertelendi) — ${exitResult.reason}` });
@@ -478,14 +549,18 @@ async function runCycle() {
 
       // ── Hard gates (binary — override score) ────────────────────────────────
       const minState = config.strategy?.min_global_state || 'RISK_ON';
-      if (currentMarketState !== minState) {
+      // Crypto scanner candidates skip the equity market-state gate:
+      // they already have the BTC EMA50 gate as their own macro filter.
+      // PANIC is still enforced globally (handled earlier in cycle).
+      const isCryptoCandidate = symbol in cryptoCandidates;
+      if (!isCryptoCandidate && currentMarketState !== minState) {
         allFiltersPass = false;
         failReason = `Market state: ${currentMarketState} (${minState} gerekli)`;
         filterLog.market_state = 'FAIL';
       } else {
-        filterLog.market_state = 'PASS';
+        filterLog.market_state = isCryptoCandidate ? 'SCANNER_BYPASS' : 'PASS';
 
-        if (symbol in cryptoCandidates) {
+        if (isCryptoCandidate) {
           // ── Crypto scanner candidate: trend/ADX already verified on 1H data ──
           const scanResult   = cryptoCandidates[symbol];
           const scannerScore = scanResult.score;
@@ -622,7 +697,7 @@ async function runCycle() {
 
       if (decision.action === 'buy') {
         // Defer buy — will be sorted by RS score before execution
-        buyCandidates.push({ symbol, pos, currentPrice, changePct, assetRegime, decision, rsScore: (symbol in cryptoCandidates) ? cryptoCandidates[symbol].score : (rsScore ?? 0), techScore, techResult, marketScore, filterLog, decisionData, tier: decisionData.tier });
+        buyCandidates.push({ symbol, pos, currentPrice, changePct, assetRegime, decision, rsScore: isCryptoCandidate ? cryptoCandidates[symbol].score : (rsScore ?? 0), techScore, techResult, marketScore, filterLog, decisionData, tier: decisionData.tier });
       } else {
         assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: decision.reason });
         logDecision({ ...decisionData, filters: filterLog, decision: 'hold', failReason: decision.reason });

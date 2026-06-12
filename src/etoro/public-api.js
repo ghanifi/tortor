@@ -8,6 +8,10 @@ const { randomUUID } = require('crypto');
 
 const BASE_URL = 'https://public-api.etoro.com';
 
+// Persistent in-process cache: instrumentId (number) → symbol (string)
+// Survives across cycles; prevents "1021" phantom when discover API is flaky
+const _symbolCache = new Map();
+
 class EToroPublicAPI {
   constructor({ publicKey, userKey }) {
     this.publicKey = publicKey;
@@ -95,21 +99,32 @@ class EToroPublicAPI {
     return res.data?.items?.[0]?.symbol ?? null;
   }
 
-  // Batch: enrich positions with symbol strings by instrumentID
+  // Batch: enrich positions with symbol strings by instrumentID.
+  // Uses a module-level cache so a single successful lookup persists for the
+  // lifetime of the process — prevents "1021" phantom when discover API is flaky.
   async enrichPositionsWithSymbols(positions) {
     const ids = [...new Set(positions.map(p => p.instrumentId).filter(Boolean))];
     if (ids.length === 0) return positions;
 
     const map = {};
-    // Fetch each instrument individually (discover endpoint filters one at a time)
-    await Promise.all(ids.map(async id => {
+    // Pre-populate from cache
+    for (const id of ids) {
+      if (_symbolCache.has(id)) map[id] = _symbolCache.get(id);
+    }
+
+    // Fetch any IDs not yet in cache
+    const uncached = ids.filter(id => !map[id]);
+    await Promise.all(uncached.map(async id => {
       try {
         const res = await this.client.get('/api/v1/instruments/discover', {
           headers: this._headers(),
           params: { instrumentID: id, fields: 'instrumentId,symbol' },
         });
         const item = res.data?.items?.[0];
-        if (item?.symbol) map[id] = item.symbol;
+        if (item?.symbol) {
+          map[id] = item.symbol;
+          _symbolCache.set(id, item.symbol);   // persist for future cycles
+        }
       } catch (_) {}
     }));
 
