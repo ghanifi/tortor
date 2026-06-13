@@ -57,14 +57,14 @@ function btcEmaGate(btcCloses) {
 
 // ── Filters ───────────────────────────────────────────────────────────────────
 
-// Filter 1: Trend — EMA50 > EMA200 on 1H AND ADX(14) > 20
+// Filter 1: Trend — EMA50 > EMA200 on 1H AND ADX(14) > 15
 function passTrendFilter(closes, highs, lows) {
   if (closes.length < 200) return false;
   const ema50  = calculateEMA(closes, 50);
   const ema200 = calculateEMA(closes, 200);
   if (ema50 === null || ema200 === null || ema50 <= ema200) return false;
   const adx = calculateADX(highs, lows, closes, 14);
-  return adx !== null && adx > 20;
+  return adx !== null && adx > 15;
 }
 
 // Filter 2 + scoring input: volume surge ratio = last_active_bar / mean(prev 20 active bars)
@@ -185,22 +185,24 @@ async function runCryptoScan(cryptoConfig = {}) {
   }
 
   const candidates = [];
+  let diagNoData = 0, diagTrend = 0, diagVolume = 0, diagScore = 0;
 
   for (const { etoro } of ETORO_CRYPTO) {
-    if (etoro === 'BTC') continue; // BTC already handled as reference
     const hist = histories[etoro];
-    if (!hist || hist.closes.length < 200) continue;
+    if (!hist || hist.closes.length < 200) { diagNoData++; continue; }
 
-    if (!passTrendFilter(hist.closes, hist.highs, hist.lows)) continue;
+    if (!passTrendFilter(hist.closes, hist.highs, hist.lows)) { diagTrend++; continue; }
 
     const surgeRatio = calcVolumeSurge(hist.volumes);
-    if (surgeRatio === null || surgeRatio < volume_surge_multiplier) continue;
+    if (surgeRatio === null || surgeRatio < volume_surge_multiplier) { diagVolume++; continue; }
 
     const result = scoreCoin(hist, btcHist);
-    if (!Number.isFinite(result.score) || result.score < min_score) continue;
+    if (!Number.isFinite(result.score) || result.score < min_score) { diagScore++; continue; }
 
     candidates.push({ symbol: etoro, ...result });
   }
+
+  console.log(`[CryptoScanner] Eleme: veri yok=${diagNoData} trend=${diagTrend} hacim=${diagVolume} skor=${diagScore}`);
 
   candidates.sort((a, b) => b.score - a.score);
   const topN = candidates.slice(0, top_n);
