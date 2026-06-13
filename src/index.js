@@ -425,7 +425,7 @@ async function runCycle() {
 
     // Pass 1: compute indicators, execute exits, collect buy candidates
     for (const symbol of allSymbols) {
-      const pos = state.positions[symbol] || { avg_cost: null, quantity: 0 };
+      let pos = state.positions[symbol] || { avg_cost: null, quantity: 0 };
       const currentPrice = prices[symbol] || 0;
       if (!currentPrice) continue;
 
