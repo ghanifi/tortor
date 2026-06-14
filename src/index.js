@@ -154,6 +154,7 @@ async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, sta
         stop_price: currentPrice - atrMult * atr,
         atr_at_entry: atr,
         entry_at: new Date().toISOString(),
+        invested_usd: budget,
       };
     } else if (tranche === 2) {
       state.positions[symbol] = {
@@ -346,6 +347,7 @@ async function runCycle() {
       state.positions[sym].quantity    = p.units || 0;
       state.positions[sym].positionIds = p.positionIds;
       state.positions[sym].instrumentId = p.instrumentId;
+      if (p.pnlUsd != null) state.positions[sym].etoro_pnl_usd = p.pnlUsd;
       if (!state.positions[sym].avg_cost && p.avgCost) {
         state.positions[sym].avg_cost = p.avgCost;
       }

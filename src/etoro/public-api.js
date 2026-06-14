@@ -72,6 +72,7 @@ class EToroPublicAPI {
       currentPrice: g.currentPrice,
       currentValue: g.totalUnits * g.currentPrice,
       pnl: g.pnl,
+      pnlUsd: g.pnl,  // always USD — eToro converts FX internally
     }));
 
     // credit field = available cash

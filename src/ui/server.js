@@ -162,11 +162,15 @@ app.get('/api/portfolio', (req, res) => {
     .filter(([symbol, pos]) => pos.quantity > 0 && !/^\d+$/.test(symbol))  // skip numeric phantom keys
     .map(([symbol, pos]) => {
       const currentPrice = state.prices?.[symbol] ?? null;
-      const pnl = (currentPrice && pos.avg_cost)
-        ? (currentPrice - pos.avg_cost) * pos.quantity : null;
+      // Use eToro's USD P&L when available — avoids GBX/pence → USD confusion for UK stocks
+      const pnlUsd = pos.etoro_pnl_usd ?? null;
       const pnlPct = (currentPrice && pos.avg_cost)
         ? ((currentPrice - pos.avg_cost) / pos.avg_cost) * 100 : null;
-      return { symbol, quantity: pos.quantity, avgCost: pos.avg_cost, currentPrice, pnl, pnlPct };
+      // USD cost basis: use what bot invested, or back-calculate from eToro pnl + pct
+      const investedUsd = pos.invested_usd
+        ?? (pnlUsd != null && pnlPct ? pnlUsd / (pnlPct / 100) : null);
+      const currentValueUsd = investedUsd != null ? investedUsd + pnlUsd : null;
+      return { symbol, quantity: pos.quantity, avgCost: pos.avg_cost, currentPrice, pnl: pnlUsd, pnlPct, investedUsd, currentValueUsd };
     });
   res.json({ positions, cash: state.cash || 0 });
 });

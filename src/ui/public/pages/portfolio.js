@@ -18,8 +18,8 @@ window.PortfolioPage = {
                 <tr>
                   <th>Sembol</th>
                   <th class="right">Adet</th>
-                  <th class="right">Ort. Maliyet</th>
-                  <th class="right">Güncel Fiyat</th>
+                  <th class="right">Yatırım ($)</th>
+                  <th class="right">Güncel ($)</th>
                   <th class="right">P&amp;L ($)</th>
                   <th class="right">P&amp;L (%)</th>
                 </tr>
@@ -31,8 +31,8 @@ window.PortfolioPage = {
                     <tr>
                       <td style="font-weight:600">${esc(p.symbol)}</td>
                       <td class="right">${p.quantity != null ? Number(p.quantity).toFixed(4) : '—'}</td>
-                      <td class="right">${fmt$(p.avgCost)}</td>
-                      <td class="right">${fmt$(p.currentPrice)}</td>
+                      <td class="right">${p.investedUsd != null ? fmt$(p.investedUsd) : '—'}</td>
+                      <td class="right">${p.currentValueUsd != null ? fmt$(p.currentValueUsd) : '—'}</td>
                       <td class="right" style="color:${p.pnl == null ? 'inherit' : p.pnl >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt$(p.pnl)}</td>
                       <td class="right" style="color:${p.pnlPct == null ? 'inherit' : p.pnlPct >= 0 ? 'var(--green)' : 'var(--red)'}">${fmtPct(p.pnlPct)}</td>
                     </tr>

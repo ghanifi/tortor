@@ -11,18 +11,30 @@ window.DashboardPage = {
       if (!state) return;
 
       // Calculate portfolio value from positions
+      // Use eToro's USD P&L where available to avoid GBX→USD confusion for UK stocks
       const openPositions = Object.entries(state.positions || {})
         .filter(([, p]) => p.quantity > 0);
-      const portfolioVal = openPositions.reduce((sum, [sym, p]) => {
-        return sum + (p.quantity || 0) * (state.prices?.[sym] || p.avg_cost || 0);
-      }, 0);
+      let portfolioVal = 0;
+      let totalPnl = 0;
+      for (const [sym, p] of openPositions) {
+        const pnlUsd = p.etoro_pnl_usd ?? null;
+        const pnlPct = (state.prices?.[sym] && p.avg_cost)
+          ? ((state.prices[sym] - p.avg_cost) / p.avg_cost) : null;
+        const investedUsd = p.invested_usd
+          ?? (pnlUsd != null && pnlPct ? pnlUsd / pnlPct : null);
+        if (investedUsd != null && pnlUsd != null) {
+          portfolioVal += investedUsd + pnlUsd;
+          totalPnl += pnlUsd;
+        } else {
+          // Fallback for positions with no eToro pnl data yet (USD instruments only)
+          const price = state.prices?.[sym] || p.avg_cost || 0;
+          const cost = (p.quantity || 0) * (p.avg_cost || 0);
+          portfolioVal += (p.quantity || 0) * price;
+          totalPnl += (p.quantity || 0) * price - cost;
+        }
+      }
       const cash = state.cash || 0;
-
-      // P&L
-      const totalCost = openPositions.reduce((sum, [, p]) => {
-        return sum + (p.quantity || 0) * (p.avg_cost || 0);
-      }, 0);
-      const totalPnl = portfolioVal - totalCost;
+      const totalCost = portfolioVal - totalPnl;
       const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
 
       const dryRun = config?.safety?.dry_run ?? true;
