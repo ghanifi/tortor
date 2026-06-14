@@ -351,6 +351,11 @@ async function runCycle() {
       if (!state.positions[sym].avg_cost && p.avgCost) {
         state.positions[sym].avg_cost = p.avgCost;
       }
+      // Ensure entry_at is always set — min_hold protection fails silently if null
+      // (null → holdMs=Infinity → "held forever" → min_hold bypassed)
+      if (!state.positions[sym].entry_at) {
+        state.positions[sym].entry_at = new Date().toISOString();
+      }
       if (existingSource) state.positions[sym].source = existingSource;
 
       // Register new non-numeric symbol in map for subsequent iterations

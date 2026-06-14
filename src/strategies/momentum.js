@@ -97,7 +97,8 @@ function checkExitTrigger({ pos, currentPrice, assetRegime, currentMarketState, 
 
   // Trigger 2: Trend break (EMA50 < EMA200)
   if (assetRegime.trend !== 'BULL') {
-    const holdMs = pos.entry_at ? Date.now() - new Date(pos.entry_at).getTime() : Infinity;
+    // If entry_at missing (state lost or manual position), assume just entered — conservative
+    const holdMs = pos.entry_at ? Date.now() - new Date(pos.entry_at).getTime() : 0;
     const minHoldMs = minHoldMinutes * 60 * 1000;
 
     if (holdMs < minHoldMs) {
