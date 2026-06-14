@@ -568,35 +568,18 @@ async function runCycle() {
         filterLog.market_state = isCryptoCandidate ? 'SCANNER_BYPASS' : 'PASS';
 
         if (isCryptoCandidate) {
-          // ── Crypto scanner candidate: trend/ADX already verified on 1H data ──
+          // ── Crypto scanner candidate: scanner is the authority, no equity re-filter ──
+          // Scanner already applied BTC gate + trend + ADX + volume + min_score.
+          // Do NOT re-apply entry_score (equity threshold) — crypto has its own scoring.
           const scanResult   = cryptoCandidates[symbol];
           const scannerScore = scanResult.score;
-          filterLog.trend = 'SCANNER';
-          filterLog.adx   = 'SCANNER';
+          filterLog.trend       = 'SCANNER';
+          filterLog.adx         = 'SCANNER';
+          filterLog.final_score = 'SCANNER';
           decisionData.finalScore = scannerScore;
-          decisionData.tier       = scoreToTier(scannerScore, entryScore, strongScore);
-          filterLog.final_score   = decisionData.tier;
-
-          if (decisionData.tier === 'NO_ENTRY') {
-            allFiltersPass = false;
-            failReason = `Scanner skoru: ${scannerScore} < ${entryScore}`;
-          } else {
-            // Earnings filter (still applies to scanner candidates)
-            if (allFiltersPass && pyramidLevel === 0) {
-              const earningsDaysBefore = config.strategy?.earnings_days_before ?? 5;
-              const earningsDaysAfter  = config.strategy?.earnings_days_after  ?? 2;
-              const earningsResult = await checkEarningsBlock(symbol, { daysBefore: earningsDaysBefore, daysAfter: earningsDaysAfter });
-              if (earningsResult.blocked) {
-                allFiltersPass = false;
-                failReason = earningsResult.reason;
-                filterLog.earnings = 'FAIL';
-              } else {
-                filterLog.earnings = 'PASS';
-              }
-            } else if (pyramidLevel > 0) {
-              filterLog.earnings = 'SKIP';
-            }
-          }
+          decisionData.tier       = scannerScore >= (config.crypto_scanner?.strong_buy_score ?? 80) ? 'STRONG_BUY' : 'BUY';
+          // Earnings check skipped for crypto (event-engine handles via CRYPTO_SYMBOLS)
+          filterLog.earnings = 'SKIP';
         } else if (assetRegime.trend === 'BEAR') {
           allFiltersPass = false;
           failReason = `Trend filtresi: BEAR (BULL veya SIDEWAYS gerekli)`;

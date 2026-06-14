@@ -13,8 +13,14 @@ const https = require('https');
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
-// Known crypto base tickers — earnings check skipped for these
-const CRYPTO_SYMBOLS = new Set(['BTC', 'ETH', 'SOL', 'BNB', 'ADA', 'XRP', 'DOGE', 'DOGECOIN', 'AVAX', 'DOT', 'MATIC']);
+// All eToro crypto tickers — earnings check skipped for all of them
+const CRYPTO_SYMBOLS = new Set([
+  'BTC','ETH','XRP','ADA','SOL','DOT','BNB','AVAX','DOGE','LTC','LINK','UNI',
+  'MATIC','ATOM','ALGO','NEAR','FTM','HBAR','ETC','TRX','XLM','VET','SAND',
+  'MANA','AXS','ENJ','CHZ','FIL','THETA','CRO','AAVE','COMP','MKR','SNX',
+  'APE','GALA','GRT','FLOW','ICP','EGLD','ONE','STX','ZIL','BAT','SHIB',
+  'DOGECOIN', // eToro-specific alias
+]);
 
 const earningsCache = {};
 
