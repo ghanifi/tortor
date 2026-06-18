@@ -79,10 +79,17 @@
   },
   "crypto_scanner": {
     "enabled": true,
-    "max_positions": 3,
-    "min_score": 60,
     "btc_ema_gate": true,
+    "btc_ema_period": 50,
     "volume_surge_multiplier": 1.5,
-    "top_n": 5
+    "top_n": 5,
+    "min_score": 60,
+    "strong_buy_score": 80,
+    "max_positions": 3,
+    "budget_per_trade": 10,
+    "dca_dip_pct": 5,
+    "max_dca_count": 3,
+    "profit_take_pct_1": 10,
+    "profit_take_pct_2": 20
   }
 }

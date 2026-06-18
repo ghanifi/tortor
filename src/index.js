@@ -106,7 +106,7 @@ async function executeSell({ symbol, pos, portion, reason, currentPrice, state, 
   return state;
 }
 
-async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, state, scores, strongBuy, portfolioValue }) {
+async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, state, scores, strongBuy, portfolioValue, isCryptoScanner, isDCA }) {
   const sizes           = config.strategy?.pyramid_sizes        || [0.4, 0.3, 0.3];
   const baseSize        = sizes[tranche - 1]                    || 0.33;
   // Strong Buy: L1 tranche gets 25% larger (capped at 0.6)
@@ -117,7 +117,7 @@ async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, sta
   const riskPerTradePct = config.strategy?.risk_per_trade_pct   ?? 0.75;
   const minReserve      = config.safety?.min_cash_reserve       || 0;
 
-  const budget = calcPositionBudget({
+  let budget = calcPositionBudget({
     totalAccountValue: (state.cash || 0) + portfolioValue,
     currentPrice,
     atr:               atr || 0,
@@ -127,6 +127,17 @@ async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, sta
     availableCash:     state.cash || 0,
     minCashReserve:    minReserve,
   });
+
+  // For crypto scanner entries, apply a fixed minimum budget if ATR sizing produced less.
+  // This ensures trades happen even when daily ATR is large relative to account size.
+  if (isCryptoScanner && config.crypto_scanner?.budget_per_trade > 0) {
+    const spendable = Math.max(0, (state.cash || 0) - minReserve);
+    const fixedBudget = Math.min(config.crypto_scanner.budget_per_trade, spendable);
+    if (fixedBudget > budget) {
+      console.log(`[Trade] ${symbol}: ATR bütçe $${budget.toFixed(2)} → crypto fixed $${fixedBudget.toFixed(2)}`);
+      budget = fixedBudget;
+    }
+  }
 
   if (budget <= 0) {
     console.log(`[Trade] [ERROR] BUY ${symbol} L${tranche} BAŞARISIZ — bütçe=0 (nakit=$${(state.cash||0).toFixed(2)}, rezerv=$${minReserve}, ATR=${atr?.toFixed(2) ?? 'N/A'})`);
@@ -142,7 +153,21 @@ async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, sta
 
     const newAvg = calcNewAvgCost(pos.quantity || 0, pos.avg_cost || currentPrice, qty, currentPrice);
 
-    if (tranche === 1) {
+    if (isDCA) {
+      // DCA alım: mevcut pozisyona ek alım — piramit seviyesini değiştirme,
+      // sadece miktar, ortalama maliyet ve dca_count güncelle.
+      // Stop da yeni düşük ortalama maliyete göre güncellenir.
+      const newStop = atr ? newAvg - atrMult * atr : (pos.stop_price ?? null);
+      state.positions[symbol] = {
+        ...pos,
+        quantity:  (pos.quantity || 0) + qty,
+        avg_cost:  newAvg,
+        dca_count: (pos.dca_count || 0) + 1,
+        stop_price: newStop,
+        profit_take_1_done: false,  // fiyat düştü → yeni avg_cost → PT resetle
+        profit_take_2_done: false,
+      };
+    } else if (tranche === 1) {
       state.positions[symbol] = {
         ...pos,
         quantity: (pos.quantity || 0) + qty,
@@ -155,6 +180,9 @@ async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, sta
         atr_at_entry: atr,
         entry_at: new Date().toISOString(),
         invested_usd: budget,
+        dca_count: 0,
+        profit_take_1_done: false,
+        profit_take_2_done: false,
       };
     } else if (tranche === 2) {
       state.positions[symbol] = {
@@ -383,6 +411,9 @@ async function runCycle() {
       try {
         const scanResults = await runCryptoScan(config.crypto_scanner || {});
         for (const c of scanResults) cryptoCandidates[c.symbol] = c;
+        if (scanResults.length === 0) {
+          console.log(`[CryptoScanner] Aday bulunamadı — BTC EMA gate, trend veya skor filtresi (BTC=$${cash > 0 ? 'veri bekleniyor' : 'bilinmiyor'})`);
+        }
       } catch (err) {
         console.warn('[CryptoScanner] Scan hatası, atlanıyor:', err.message);
       }
@@ -512,6 +543,31 @@ async function runCycle() {
           if (pos.stop_price < pos.avg_cost) {
             state.positions[symbol].stop_price = pos.avg_cost;
             pos = state.positions[symbol];
+          }
+        }
+
+        // ── Crypto parça parça satış (profit taking) ────────────────────────────
+        // Scanner pozisyonları için: hedef kâr seviyelerine ulaşınca %33'er sat.
+        // ATR stop'tan önce kontrol edilir — kâr realizasyonu için fırsat verir.
+        if (pos.source === 'crypto_scanner' && pos.avg_cost && currentPrice > pos.avg_cost) {
+          const profitPct = ((currentPrice - pos.avg_cost) / pos.avg_cost) * 100;
+          const pt1 = config.crypto_scanner?.profit_take_pct_1 ?? 10;
+          const pt2 = config.crypto_scanner?.profit_take_pct_2 ?? 20;
+          let ptReason = null;
+          if (!pos.profit_take_2_done && profitPct >= pt2) {
+            state.positions[symbol].profit_take_2_done = true;
+            state.positions[symbol].profit_take_1_done = true;
+            ptReason = `Kısmi kar PT2: +${profitPct.toFixed(1)}% ≥ +${pt2}%`;
+          } else if (!pos.profit_take_1_done && profitPct >= pt1) {
+            state.positions[symbol].profit_take_1_done = true;
+            ptReason = `Kısmi kar PT1: +${profitPct.toFixed(1)}% ≥ +${pt1}%`;
+          }
+          if (ptReason) {
+            pos = state.positions[symbol];
+            state = await executeSell({ symbol, pos, portion: 0.33, reason: ptReason, currentPrice, state, marketState: currentMarketState });
+            assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'sell', reason: ptReason });
+            logDecision({ ...decisionData, decision: 'sell', failReason: null });
+            continue;
           }
         }
 
@@ -687,21 +743,52 @@ async function runCycle() {
 
       if (decision.action === 'buy') {
         // Defer buy — will be sorted by RS score before execution
-        buyCandidates.push({ symbol, pos, currentPrice, changePct, assetRegime, decision, rsScore: isCryptoCandidate ? cryptoCandidates[symbol].score : (rsScore ?? 0), techScore, techResult, marketScore, filterLog, decisionData, tier: decisionData.tier });
+        buyCandidates.push({ symbol, pos, currentPrice, changePct, assetRegime, decision, rsScore: isCryptoCandidate ? cryptoCandidates[symbol].score : (rsScore ?? 0), techScore, techResult, marketScore, filterLog, decisionData, tier: decisionData.tier, isDCA: false });
       } else {
-        assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: decision.reason });
-        logDecision({ ...decisionData, filters: filterLog, decision: 'hold', failReason: decision.reason });
+        // ── Crypto DCA: geçmiş fiyata göre alım (parça parça alış) ───────────
+        // Scanner pozisyonu var ve fiyat avg_cost'un dca_dip_pct% altına düştüyse
+        // pyramid mantığı yerine DCA alım sinyali üret.
+        let dcaQueued = false;
+        if (pos.source === 'crypto_scanner' && pos.avg_cost && (pos.quantity || 0) > 0) {
+          const dcaDipPct    = config.crypto_scanner?.dca_dip_pct    ?? 5;
+          const maxDcaCount  = config.crypto_scanner?.max_dca_count  ?? 3;
+          const dcaCount     = pos.dca_count || 0;
+          if (currentPrice <= pos.avg_cost * (1 - dcaDipPct / 100) && dcaCount < maxDcaCount) {
+            const dcaReason = `DCA alım: $${currentPrice.toFixed(4)} ≤ ort. maliyet $${pos.avg_cost.toFixed(4)} −${dcaDipPct}% (${dcaCount + 1}/${maxDcaCount})`;
+            buyCandidates.push({
+              symbol, pos, currentPrice, changePct, assetRegime,
+              decision: { action: 'buy', tranche: 1, reason: dcaReason },
+              rsScore: 0, techScore: 0, techResult: {}, marketScore: 0,
+              filterLog: { ...filterLog, dca: 'TRIGGER', ai_audit: 'SKIP', correlation: 'SKIP' },
+              decisionData: { ...decisionData, tier: 'BUY', finalScore: 50 },
+              tier: 'BUY',
+              isDCA: true,
+            });
+            dcaQueued = true;
+            console.log(`[DCA] ${symbol}: ${dcaReason}`);
+          }
+        }
+        if (!dcaQueued) {
+          assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: decision.reason });
+          logDecision({ ...decisionData, filters: filterLog, decision: 'hold', failReason: decision.reason });
+        }
       }
     }
 
     // Pass 2: execute buys ranked by RS score (strongest signal first)
     buyCandidates.sort((a, b) => b.rsScore - a.rsScore);
+    const cryptoBuyCandidates = buyCandidates.filter(c => c.symbol in cryptoCandidates);
+    if (cryptoBuyCandidates.length) {
+      console.log(`[CryptoPass2] ${cryptoBuyCandidates.length} aday işleniyor: ${cryptoBuyCandidates.map(c => `${c.symbol}(${c.rsScore})`).join(', ')}`);
+    } else if (Object.keys(cryptoCandidates).length) {
+      console.log(`[CryptoPass2] Scanner ${Object.keys(cryptoCandidates).length} aday buldu ama hiçbiri Pass2'ye ulaşmadı`);
+    }
 
     const corrMax = config.strategy?.correlation_max ?? 0.85;
 
-    for (const { symbol, pos, currentPrice, changePct, assetRegime, decision, rsScore, techScore, techResult, marketScore, filterLog, decisionData, tier } of buyCandidates) {
-      // Correlation check (Layer 7) — only for new entries (tranche 1), not pyramid additions
-      if (decision.tranche === 1) {
+    for (const { symbol, pos, currentPrice, changePct, assetRegime, decision, rsScore, techScore, techResult, marketScore, filterLog, decisionData, tier, isDCA } of buyCandidates) {
+      // Correlation check (Layer 7) — skip for DCA (already in the position) and pyramid additions
+      if (decision.tranche === 1 && !isDCA) {
         const corrResult = checkCorrelation(historyMap[symbol]?.closes || [], state.positions, historyMap, corrMax);
         if (corrResult.blocked) {
           const reason = `Korelasyon filtresi: ${corrResult.with} ile r=${corrResult.correlation.toFixed(2)}`;
@@ -713,11 +800,18 @@ async function runCycle() {
 
         // AI Auditor (Layer 14) — final gate for new entries
         // Skip if AI was already called in Pass 1 (override mode promoted this candidate)
+        // Also skip for crypto scanner candidates: scanner already applied BTC gate + trend +
+        // ADX + volume + RS + RSI on 1H data. Sending daily-candle analysis to the AI
+        // would contradict the scanner's 1H conclusion and block valid crypto entries.
+        const isCryptoEntry = (symbol in cryptoCandidates) || isDCA;
         let aiVerdict = decisionData.aiVerdict ?? null;
         let aiReason  = decisionData.aiReason  ?? null;
         const aiMode  = config.strategy?.ai_mode || 'gate';
         const aiCheck = canCallAI(state);
-        if (aiMode !== 'disabled' && !aiVerdict && aiCheck.allowed) {
+        if (isCryptoEntry) {
+          filterLog.ai_audit = isDCA ? 'DCA' : 'SCANNER';
+          console.log(`[AI Auditor] ${symbol}: ${isDCA ? 'DCA alım' : 'scanner adayı'} — AI denetimi atlandı`);
+        } else if (aiMode !== 'disabled' && !aiVerdict && aiCheck.allowed) {
           try {
             const audit = await auditTrade({
               symbol, price: currentPrice,
@@ -798,9 +892,11 @@ async function runCycle() {
         continue;
       }
 
-      const buyReason = tier === 'STRONG_BUY'
-        ? `[STRONG BUY:${decisionData.finalScore}] ${decision.reason}`
-        : `[Score:${decisionData.finalScore}] ${decision.reason}`;
+      const buyReason = isDCA
+        ? decision.reason
+        : tier === 'STRONG_BUY'
+          ? `[STRONG BUY:${decisionData.finalScore}] ${decision.reason}`
+          : `[Score:${decisionData.finalScore}] ${decision.reason}`;
 
       const buyResult = await executeBuy({
         symbol, pos, tranche: decision.tranche,
@@ -808,6 +904,8 @@ async function runCycle() {
         atr: assetRegime.atr, state,
         strongBuy: tier === 'STRONG_BUY',
         portfolioValue,
+        isCryptoScanner: (symbol in cryptoCandidates) || isDCA,
+        isDCA,
         scores: {
           market_state:  currentMarketState,
           market_score:  marketScore,

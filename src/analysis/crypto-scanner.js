@@ -47,12 +47,12 @@ async function fetchAllCryptoHistories() {
 
 // ── BTC Gate ──────────────────────────────────────────────────────────────────
 
-// Returns true (gate OPEN) if BTC last price >= EMA50(1H)
-function btcEmaGate(btcCloses) {
-  if (btcCloses.length < 50) return false;
-  const ema50 = calculateEMA(btcCloses, 50);
-  if (ema50 === null) return false;
-  return btcCloses[btcCloses.length - 1] >= ema50;
+// Returns true (gate OPEN) if BTC last price >= EMA(period, 1H)
+function btcEmaGate(btcCloses, period = 50) {
+  if (btcCloses.length < period) return false;
+  const ema = calculateEMA(btcCloses, period);
+  if (ema === null) return false;
+  return btcCloses[btcCloses.length - 1] >= ema;
 }
 
 // ── Filters ───────────────────────────────────────────────────────────────────
@@ -159,6 +159,7 @@ async function runCryptoScan(cryptoConfig = {}) {
   const {
     enabled                = true,
     btc_ema_gate           = true,
+    btc_ema_period         = 50,
     volume_surge_multiplier = 1.5,
     top_n                  = 5,
     min_score              = 65,
@@ -176,9 +177,9 @@ async function runCryptoScan(cryptoConfig = {}) {
     return [];
   }
 
-  // BTC EMA50 gate
-  if (btc_ema_gate && !btcEmaGate(btcHist.closes)) {
-    console.log('[CryptoScanner] BTC < EMA50(1H) — bear market gate, yeni alım yok');
+  // BTC EMA gate
+  if (btc_ema_gate && !btcEmaGate(btcHist.closes, btc_ema_period)) {
+    console.log(`[CryptoScanner] BTC < EMA${btc_ema_period}(1H) — bear market gate, yeni alım yok`);
     return [];
   }
 
