@@ -576,10 +576,9 @@ async function runCycle() {
         }
 
         const minHoldMinutes = config.strategy?.min_hold_minutes ?? 60;
-        const inProfit = pos.avg_cost != null && currentPrice > pos.avg_cost;
         const exitResult = checkExitTrigger({
           pos, currentPrice, assetRegime,
-          currentMarketState, prevMarketState, minHoldMinutes, inProfit
+          currentMarketState, prevMarketState, minHoldMinutes,
         });
 
         if (exitResult._skipped) {

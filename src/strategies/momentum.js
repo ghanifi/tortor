@@ -71,7 +71,7 @@ function decideMomentum({ pyramidLevel, currentPrice, entryPrice, level2Price, a
  * @param {number} [params.minHoldMinutes=60] - minimum hold time before trend-break exit fires
  * @returns {{ exit: boolean, portion?: number, reason?: string }}
  */
-function checkExitTrigger({ pos, currentPrice, assetRegime, currentMarketState, prevMarketState, minHoldMinutes = 60, inProfit = false }) {
+function checkExitTrigger({ pos, currentPrice, assetRegime, currentMarketState, prevMarketState, minHoldMinutes = 60 }) {
   // PANIC: tek istisna — her koşulda acil çıkış
   if (currentMarketState === 'PANIC') {
     return { exit: true, portion: 1, reason: 'Market state: PANIC → tüm pozisyon kapatıldı' };
@@ -104,11 +104,6 @@ function checkExitTrigger({ pos, currentPrice, assetRegime, currentMarketState, 
     if (holdMs < minHoldMs) {
       const heldMin = Math.round(holdMs / 60000);
       return { exit: false, _skipped: `Trend kırıldı ama min hold ${minHoldMinutes}dk (${heldMin}dk tutuldu)` };
-    }
-
-    // Karda ise trend break'i ATR stop'a bırak (kazananları erken kesme)
-    if (inProfit) {
-      return { exit: false, _skipped: `Trend kırıldı ama karda — ATR stop ($${pos.stop_price?.toFixed(2) ?? '?'}) bekliyor` };
     }
 
     return { exit: true, portion: 1, reason: 'Trend kırıldı (EMA50 < EMA200)' };
