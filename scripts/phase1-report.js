@@ -25,6 +25,21 @@ const YAHOO_SYM = {
 };
 function toYahoo(sym) { return YAHOO_SYM[sym] || sym; }
 
+// ── Fiyat çekme (v8 — SSL proxy güvenli) ────────────────────────────────────
+// v7 quote endpoint sunucuda bloke olabilir; v8 chart her zaman çalışır.
+async function fetchPricesV8(symbols) {
+  const prices = {};
+  await Promise.all(symbols.map(async sym => {
+    try {
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${toYahoo(sym)}?interval=1d&range=5d`;
+      const res = await axios.get(url, { headers: YAHOO_HEADERS, timeout: 10000, httpsAgent });
+      const closes = res.data.chart?.result?.[0]?.indicators?.quote?.[0]?.close?.filter(Boolean) || [];
+      if (closes.length) prices[sym] = closes[closes.length - 1];
+    } catch {}
+  }));
+  return prices;
+}
+
 // ── Bar aralığı çekme ────────────────────────────────────────────────────────
 
 async function fetchBars(sym, interval, range) {
@@ -110,14 +125,19 @@ async function main() {
   console.log('  NOT: Yahoo bid/ask eToro spread\'inden DARDIR.');
   console.log('       Aşağıdaki spread_pct "taban maliyet"; gerçek eToro roundtrip bunun üstündedir.\n');
 
-  // 1. Spread verisi
+  // 1a. Fiyatlar — v8 chart (SSL proxy güvenli, her zaman çalışır)
+  process.stdout.write('→ Fiyatlar çekiliyor (v8)... ');
+  const pricesV8 = await fetchPricesV8(symbols);
+  console.log(`OK (${Object.keys(pricesV8).length}/${symbols.length} sembol)`);
+
+  // 1b. Spread verisi — v7 quote (piyasa saatlerinde bid/ask verir; kapalıyken N/A)
   process.stdout.write('→ Yahoo v7 bid/ask çekiliyor... ');
   let spreadData = {};
   try {
     spreadData = await fetchSpreadData(symbols);
     console.log('OK');
   } catch (err) {
-    console.log(`HATA: ${err.message}`);
+    console.log(`HATA (v7 bloke olabilir): ${err.message}`);
   }
 
   // 2. 1-dk ve 5-dk bar aralıkları (sembol başına sırayla, rate-limit için bekle)
@@ -221,7 +241,7 @@ async function main() {
   console.log(sep);
 
   for (const sym of symbols) {
-    const price = spreadData[sym]?.price;
+    const price = pricesV8[sym] ?? spreadData[sym]?.price ?? null;
     if (!price) {
       console.log(`  ${sym.padEnd(10)}: fiyat verisi yok`);
       continue;
@@ -240,10 +260,10 @@ async function main() {
   const REPORT_JSON = path.join(LOG_DIR, 'phase1_report.json');
   if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
 
-  // Feed validation results for JSON output
+  // Feed validation results — v8 fiyat öncelikli, v7 fallback
   const feedResults = {};
   for (const sym of symbols) {
-    const price = spreadData[sym]?.price ?? null;
+    const price = pricesV8[sym] ?? spreadData[sym]?.price ?? null;
     if (!price) { feedResults[sym] = { price: null, ok: null, note: 'fiyat verisi yok' }; continue; }
     if (sym === 'RR.L') {
       feedResults[sym] = { price, ok: true, note: `${price.toFixed(0)} pence — NORMAL (Londra borsası pence cinsinden)` };
