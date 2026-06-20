@@ -25,6 +25,10 @@ async function fetchCryptoHistory1H(yahooSymbol) {
       v:    (() => { const raw = (quote.volume || [])[i]; return (raw == null || isNaN(raw)) ? 0 : raw; })(),
     }))
     .filter(d => d.c != null && d.h != null && d.l != null);
+
+  // Drop last bar — current incomplete hourly candle must not influence signals
+  if (raw.length > 0) raw.pop();
+
   return {
     closes:  raw.map(d => d.c),
     highs:   raw.map(d => d.h),

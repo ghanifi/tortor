@@ -172,6 +172,10 @@ async function fetchSymbolHistory(symbol, range = '3mo') {
     o: (quote.open || [])[i], v: (quote.volume || [])[i]
   })).filter(d => d.c != null && d.h != null && d.l != null);
 
+  // Drop last bar — Yahoo always appends the current incomplete candle.
+  // All EMA/ADX/ATR signals must use only fully-closed bars.
+  if (raw.length > 0) raw.pop();
+
   return {
     closes:  raw.map(d => d.c),
     highs:   raw.map(d => d.h),
