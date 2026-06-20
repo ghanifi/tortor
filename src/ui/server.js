@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
+const { spawn } = require('child_process');
 const { loadConfig } = require('../config');
 const { loadState, saveState } = require('../state');
 const EToroClient = require('../etoro/client');
@@ -24,6 +25,10 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const LOG_DIR = path.join(DATA_DIR, 'logs');
 const BOT_LOG = path.join(LOG_DIR, 'bot.log');
 const TRADES_LOG = path.join(LOG_DIR, 'trades.jsonl');
+const SPREAD_CSV = path.join(LOG_DIR, 'spread_log.csv');
+const PHASE1_JSON = path.join(LOG_DIR, 'phase1_report.json');
+
+let phase1Running = false;
 
 // Lazy EToroClient — only created on first manual trade call
 let _etoroClient = null;
@@ -252,6 +257,66 @@ app.get('/api/history', (req, res) => {
     .filter(r => r && (r.action === 'buy' || r.action === 'sell'))
     .reverse();
   res.json(trades);
+});
+
+// ── API: Phase 1 measurement data ───────────────────────────────────���───────
+app.get('/api/phase1', (req, res) => {
+  const data = { running: phase1Running, report: null, spreadLog: [] };
+
+  // Latest feasibility report
+  if (fs.existsSync(PHASE1_JSON)) {
+    try { data.report = JSON.parse(fs.readFileSync(PHASE1_JSON, 'utf8')); } catch {}
+  }
+
+  // Last 200 rows from spread_log.csv, grouped latest-first
+  if (fs.existsSync(SPREAD_CSV)) {
+    const lines = fs.readFileSync(SPREAD_CSV, 'utf8').trim().split('\n').filter(Boolean);
+    data.spreadLog = lines
+      .slice(1)        // skip CSV header
+      .slice(-200)
+      .reverse()
+      .map(line => {
+        const p = line.split(',');
+        return {
+          timestamp:  p[0] || '',
+          symbol:     p[1] || '',
+          bid:        p[2] ? +p[2] : null,
+          ask:        p[3] ? +p[3] : null,
+          spread_pct: p[4] ? +p[4] : null,
+        };
+      })
+      .filter(r => r.symbol && r.symbol !== 'symbol');
+  }
+
+  res.json(data);
+});
+
+// POST /api/phase1/run — spawn the report script (async, fire-and-forget)
+app.post('/api/phase1/run', (req, res) => {
+  if (phase1Running) return res.status(409).json({ error: 'Rapor zaten çalışıyor, bekleyin' });
+  phase1Running = true;
+
+  const scriptPath = path.join(process.cwd(), 'scripts', 'phase1-report.js');
+  if (!fs.existsSync(scriptPath)) {
+    phase1Running = false;
+    return res.status(404).json({ error: 'scripts/phase1-report.js bulunamadı' });
+  }
+
+  const child = spawn(process.execPath, [scriptPath], {
+    cwd: process.cwd(),
+    env: process.env,
+    stdio: 'inherit',
+  });
+  child.on('close', code => {
+    phase1Running = false;
+    console.log(`[Phase1] Script tamamlandı — çıkış kodu: ${code}`);
+  });
+  child.on('error', err => {
+    phase1Running = false;
+    console.error('[Phase1] Script hatası:', err.message);
+  });
+
+  res.json({ ok: true, message: 'Rapor başlatıldı (~30-60s sürer). Sayfayı yenileyin.' });
 });
 
 // Start

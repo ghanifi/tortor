@@ -21,6 +21,7 @@ const { calcFinalScore, scoreToTier } = require('./analysis/final-score');
 const SlackNotifier = require('./slack');
 const { isMarketOpen } = require('./market-hours');
 const { runCryptoScan } = require('./analysis/crypto-scanner');
+const { logSpreads } = require('./analysis/spread-logger');
 const path = require('path');
 const fs = require('fs');
 
@@ -424,6 +425,9 @@ async function runCycle() {
       ...(config.watchlist || []),
       ...Object.keys(cryptoCandidates),
     ])];
+
+    // Faz 1: spread log (her cycle; hata olursa sessizce geç, strateji etkilenmez)
+    logSpreads(allSymbols).catch(() => {});
 
     // Fetch missing prices from Yahoo
     const missingPriceSymbols = allSymbols.filter(s => !prices[s]);

@@ -62,6 +62,7 @@ const PAGES = {
   settings:  () => window.SettingsPage.render(content),
   log:       () => window.LogPage.render(content),
   history:   () => window.HistoryPage.render(content),
+  analysis:  () => window.AnalysisPage.render(content),
 };
 
 const content = document.getElementById('content');

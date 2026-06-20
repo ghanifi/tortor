@@ -101,8 +101,10 @@ describe('checkExitTrigger — trigger 1 ATR stop', () => {
 
 describe('checkExitTrigger — trigger 2 trend break', () => {
   test('BEAR trend → exit all', () => {
+    // entry_at must be old enough to clear the min_hold guard (default 60min)
+    const oldEntry = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(); // 3h ago
     const r = checkExitTrigger({
-      pos: { stop_price: 85 }, currentPrice: 100,
+      pos: { stop_price: 85, entry_at: oldEntry }, currentPrice: 100,
       assetRegime: BEAR_REGIME,
       currentMarketState: 'RISK_ON', prevMarketState: 'RISK_ON'
     });
