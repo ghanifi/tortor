@@ -410,7 +410,7 @@ async function runCycle() {
     let cryptoCandidates = {}; // symbol → CandidateResult
     if (config.crypto_scanner?.enabled !== false) {
       try {
-        const scanResults = await runCryptoScan(config.crypto_scanner || {});
+        const scanResults = await runCryptoScan(config.crypto_scanner || {}, state, saveState);
         for (const c of scanResults) cryptoCandidates[c.symbol] = c;
         if (scanResults.length === 0) {
           console.log(`[CryptoScanner] Aday bulunamadı — BTC EMA gate, trend veya skor filtresi (BTC=$${cash > 0 ? 'veri bekleniyor' : 'bilinmiyor'})`);

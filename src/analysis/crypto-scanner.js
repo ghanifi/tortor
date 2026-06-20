@@ -51,12 +51,21 @@ async function fetchAllCryptoHistories() {
 
 // ── BTC Gate ──────────────────────────────────────────────────────────────────
 
-// Returns true (gate OPEN) if BTC last price >= EMA(period, 1H)
-function btcEmaGate(btcCloses, period = 50) {
+// Returns true (gate OPEN) applying ±1% hysteresis to prevent flicker.
+// Gate closes only when BTC < EMA×0.99; opens only when BTC > EMA×1.01.
+// prevGateOpen: last persisted gate state (undefined → treated as closed).
+function btcEmaGate(btcCloses, period = 50, prevGateOpen = false) {
   if (btcCloses.length < period) return false;
   const ema = calculateEMA(btcCloses, period);
   if (ema === null) return false;
-  return btcCloses[btcCloses.length - 1] >= ema;
+  const price = btcCloses[btcCloses.length - 1];
+  if (prevGateOpen) {
+    // Gate is currently open — close only if price drops below 99% of EMA
+    return price >= ema * 0.99;
+  } else {
+    // Gate is currently closed — open only if price rises above 101% of EMA
+    return price > ema * 1.01;
+  }
 }
 
 // ── Filters ───────────────────────────────────────────────────────────────────
@@ -157,9 +166,11 @@ function scoreCoin(hist, btcHist) {
 /**
  * Run the full crypto scan pass.
  * @param {object} cryptoConfig — from config.json `crypto_scanner` block
+ * @param {object} [botState]   — full bot state (loadState()); gate persisted in state.crypto_gate_open
+ * @param {Function} [saveStateFn] — saveState() callback; called when gate state changes
  * @returns {Promise<Array<CandidateResult & { symbol: string }>>}
  */
-async function runCryptoScan(cryptoConfig = {}) {
+async function runCryptoScan(cryptoConfig = {}, botState = null, saveStateFn = null) {
   const {
     enabled                = true,
     btc_ema_gate           = true,
@@ -181,10 +192,19 @@ async function runCryptoScan(cryptoConfig = {}) {
     return [];
   }
 
-  // BTC EMA gate
-  if (btc_ema_gate && !btcEmaGate(btcHist.closes, btc_ema_period)) {
-    console.log(`[CryptoScanner] BTC < EMA${btc_ema_period}(1H) — bear market gate, yeni alım yok`);
-    return [];
+  // BTC EMA gate with ±1% hysteresis
+  if (btc_ema_gate) {
+    const prevGateOpen = botState?.crypto_gate_open ?? false;
+    const gateOpen = btcEmaGate(btcHist.closes, btc_ema_period, prevGateOpen);
+    if (gateOpen !== prevGateOpen && botState && saveStateFn) {
+      botState.crypto_gate_open = gateOpen;
+      saveStateFn(botState);
+      console.log(`[CryptoScanner] BTC gate ${prevGateOpen ? 'OPEN→CLOSED' : 'CLOSED→OPEN'} (EMA${btc_ema_period} histerezis)`);
+    }
+    if (!gateOpen) {
+      console.log(`[CryptoScanner] BTC EMA${btc_ema_period} gate kapalı — bear market, yeni alım yok`);
+      return [];
+    }
   }
 
   const candidates = [];
