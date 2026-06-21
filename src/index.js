@@ -603,7 +603,22 @@ async function runCycle() {
         }
       }
 
-      // d. Entry filters
+      // d. Cooldown check — skip symbols rejected 3× for the same reason (no open position)
+      // Only applies to pure watchlist symbols; open positions always proceed to exit logic above.
+      if ((pos.quantity || 0) === 0) {
+        const cooldownMinutes = config.strategy?.rejection_cooldown_minutes ?? 60;
+        const cooldownMs = cooldownMinutes * 60 * 1000;
+        const rej = state.rejection_counts?.[symbol];
+        if (rej && rej.count >= 3 && (Date.now() - new Date(rej.since).getTime()) < cooldownMs) {
+          const minsLeft = Math.ceil((cooldownMs - (Date.now() - new Date(rej.since).getTime())) / 60000);
+          const reason = `Soğuma süresi: ${minsLeft}dk kaldı (${rej.count}× '${rej.reason}' reddedildi)`;
+          assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason });
+          logDecision({ ...decisionData, filters: {}, decision: 'hold', failReason: reason });
+          continue;
+        }
+      }
+
+      // e. Entry filters
       const pyramidLevel  = pos.pyramid_level || 0;
       const adxThreshold  = config.strategy?.adx_threshold     || 20;
       const entryScore    = config.strategy?.entry_score        ?? 70;
@@ -774,6 +789,23 @@ async function runCycle() {
         if (!dcaQueued) {
           assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: decision.reason });
           logDecision({ ...decisionData, filters: filterLog, decision: 'hold', failReason: decision.reason });
+
+          // Track rejection counts for cooldown (only watchlist symbols, not open positions)
+          if ((pos.quantity || 0) === 0 && decision.reason) {
+            if (!state.rejection_counts) state.rejection_counts = {};
+            const prev = state.rejection_counts[symbol];
+            if (prev && prev.reason === decision.reason) {
+              state.rejection_counts[symbol] = { reason: decision.reason, count: prev.count + 1, since: prev.since };
+            } else {
+              // Reason changed — reset counter; new since timestamp
+              state.rejection_counts[symbol] = { reason: decision.reason, count: 1, since: new Date().toISOString() };
+            }
+          }
+        }
+      } else {
+        // Symbol is going to buy — clear any rejection count so it starts fresh after exit
+        if (state.rejection_counts?.[symbol]) {
+          delete state.rejection_counts[symbol];
         }
       }
     }
