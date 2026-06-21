@@ -1,4 +1,4 @@
-// src/ui/public/pages/analysis.js — Faz 1 Ölç��m Raporu
+// src/ui/public/pages/analysis.js — Phase 1 Measurement Report
 window.AnalysisPage = {
   _pollTimer: null,
 
@@ -7,27 +7,27 @@ window.AnalysisPage = {
       <div class="card" style="margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
           <div>
-            <div class="card-title" style="margin-bottom:2px">🔬 Faz 1 — Ölçüm Raporu</div>
-            <div style="color:var(--subtle);font-size:12px">Spread, hareket ve feed doğrulama. Strateji mantığı değiştirilmez.</div>
+            <div class="card-title" style="margin-bottom:2px">🔬 Phase 1 — Measurement Report</div>
+            <div style="color:var(--subtle);font-size:12px">Spread, movement and feed validation. Strategy logic is not modified.</div>
           </div>
           <div style="display:flex;gap:8px;align-items:center">
             <span id="phase1-status" style="font-size:12px;color:var(--subtle)"></span>
-            <button id="btn-run-report" class="btn-primary" onclick="AnalysisPage.runReport()">▶ Raporu Çalıştır</button>
-            <button class="btn-secondary" onclick="AnalysisPage.load()">↻ Yenile</button>
+            <button id="btn-run-report" class="btn-primary" onclick="AnalysisPage.runReport()">▶ Run Report</button>
+            <button class="btn-secondary" onclick="AnalysisPage.load()">↻ Refresh</button>
           </div>
         </div>
       </div>
 
       <div id="phase1-note" class="card" style="margin-bottom:12px;display:none">
         <div style="color:#f59e0b;font-size:12px">
-          ⚠️ <strong>NOT:</strong> Yahoo bid/ask eToro spread'inden <strong>dardır</strong>.
-          Aşağıdaki spread_pct "taban maliyet"tir; gerçek eToro roundtrip maliyeti bunun üstündedir.
-          Piyasa kapalıyken bid/ask = N/A normaldir.
+          ⚠️ <strong>NOTE:</strong> Yahoo bid/ask is <strong>narrower</strong> than eToro's actual spread.
+          The spread_pct below is a "floor cost"; real eToro roundtrip cost is higher.
+          bid/ask = N/A when market is closed is normal.
         </div>
       </div>
 
       <div id="phase1-content">
-        <div class="loading">Yükleniyor...</div>
+        <div class="loading">Loading...</div>
       </div>
     `;
 
@@ -46,20 +46,20 @@ window.AnalysisPage = {
       if (!data) return;
 
       if (data.running) {
-        if (statusEl) statusEl.textContent = '⏳ Rapor çalışıyor...';
-        if (btnEl) { btnEl.textContent = '⏳ Çalışıyor...'; btnEl.disabled = true; }
-        contentEl.innerHTML = '<div class="loading">Rapor hesaplanıyor, ~30-60 saniye sürer...</div>';
+        if (statusEl) statusEl.textContent = '⏳ Report running...';
+        if (btnEl) { btnEl.textContent = '⏳ Running...'; btnEl.disabled = true; }
+        contentEl.innerHTML = '<div class="loading">Calculating report, ~30-60 seconds...</div>';
         this._startPoll();
         return;
       } else {
-        if (btnEl) { btnEl.textContent = '▶ Raporu Çalıştır'; btnEl.disabled = false; }
+        if (btnEl) { btnEl.textContent = '▶ Run Report'; btnEl.disabled = false; }
         this._stopPoll();
       }
 
       if (!data.report && data.spreadLog.length === 0) {
         contentEl.innerHTML = `
           <div class="card" style="color:var(--subtle);text-align:center;padding:32px">
-            Henüz rapor yok. <strong>▶ Raporu Çalıştır</strong> butonuna tıklayın.
+            No report yet. Click <strong>▶ Run Report</strong>.
           </div>`;
         return;
       }
@@ -68,32 +68,32 @@ window.AnalysisPage = {
 
       let html = '';
 
-      // ── Fizibilite tablosu ────────────────────────────────────────────
+      // ── Feasibility table ─────────────────────────────────────────────
       if (data.report?.feasibility?.length) {
         const genAt = data.report.generatedAt
-          ? new Date(data.report.generatedAt).toLocaleString('tr-TR') : '—';
-        if (statusEl) statusEl.textContent = `Son çalışma: ${genAt}`;
+          ? new Date(data.report.generatedAt).toLocaleString('en-GB') : '—';
+        if (statusEl) statusEl.textContent = `Last run: ${genAt}`;
 
         html += `
           <div class="card" style="margin-bottom:12px">
-            <div class="card-title">📊 Fizibilite Tablosu</div>
+            <div class="card-title">📊 Feasibility Table</div>
             <div style="font-size:11px;color:var(--subtle);margin-bottom:8px">
-              har/mal = ort_1dk_hareket% / roundtrip_spread% &nbsp;|&nbsp;
-              <span style="color:#ef4444">❌ &lt; 2 → matematiksel kayıp</span> &nbsp;
-              <span style="color:#f59e0b">⚠️ 2-3 → sınır</span> &nbsp;
-              <span style="color:#22c55e">✓ &gt; 3 → yeterli</span>
+              move/cost = avg_1m_move% / roundtrip_spread% &nbsp;|&nbsp;
+              <span style="color:#ef4444">❌ &lt; 2 → mathematical loss</span> &nbsp;
+              <span style="color:#f59e0b">⚠️ 2-3 → borderline</span> &nbsp;
+              <span style="color:#22c55e">✓ &gt; 3 → adequate</span>
             </div>
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Sembol</th>
+                    <th>Symbol</th>
                     <th class="right">Spread%</th>
                     <th class="right">Roundtrip%</th>
-                    <th class="right">1dk Har%</th>
-                    <th class="right">5dk Har%</th>
-                    <th class="right">Har/Mal</th>
-                    <th>Karar</th>
+                    <th class="right">1m Move%</th>
+                    <th class="right">5m Move%</th>
+                    <th class="right">Move/Cost</th>
+                    <th>Verdict</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -118,16 +118,16 @@ window.AnalysisPage = {
           </div>`;
       }
 
-      // ── Feed doğrulama ────────────────────────────────────────────────
+      // ── Feed validation ───────────────────────────────────────────────
       if (data.report?.feed && Object.keys(data.report.feed).length) {
         const feedEntries = Object.entries(data.report.feed);
         const hasWarning = feedEntries.some(([, v]) => v.ok === false);
         html += `
           <div class="card" style="margin-bottom:12px">
-            <div class="card-title">🔍 Feed Doğrulama ${hasWarning ? '<span style="color:#ef4444">⚠️ Şüpheli fiyat var</span>' : '<span style="color:#22c55e">✓ Temiz</span>'}</div>
+            <div class="card-title">🔍 Feed Validation ${hasWarning ? '<span style="color:#ef4444">⚠️ Suspicious price detected</span>' : '<span style="color:#22c55e">✓ Clean</span>'}</div>
             <div class="table-wrap">
               <table>
-                <thead><tr><th>Sembol</th><th class="right">Fiyat</th><th>Durum</th></tr></thead>
+                <thead><tr><th>Symbol</th><th class="right">Price</th><th>Status</th></tr></thead>
                 <tbody>
                   ${feedEntries.map(([sym, v]) => {
                     const color = v.ok === false ? '#ef4444' : v.ok === true ? '#22c55e' : 'var(--subtle)';
@@ -144,7 +144,7 @@ window.AnalysisPage = {
           </div>`;
       }
 
-      // ── Son spread kayıtları ──────────────────────────────────────────
+      // ── Latest spread records ─────────────────────────────────────────
       if (data.spreadLog.length > 0) {
         // Latest entry per symbol
         const latestBySymbol = {};
@@ -153,13 +153,13 @@ window.AnalysisPage = {
         }
         html += `
           <div class="card">
-            <div class="card-title">📈 Son Spread Kayıtları (sembol başına en yeni)</div>
+            <div class="card-title">📈 Latest Spread Records (newest per symbol)</div>
             <div style="font-size:11px;color:var(--subtle);margin-bottom:8px">
-              data/logs/spread_log.csv ��� her cycle otomatik eklenir
+              data/logs/spread_log.csv — appended automatically each cycle
             </div>
             <div class="table-wrap">
               <table>
-                <thead><tr><th>Zaman</th><th>Sembol</th><th class="right">Bid</th><th class="right">Ask</th><th class="right">Spread%</th></tr></thead>
+                <thead><tr><th>Time</th><th>Symbol</th><th class="right">Bid</th><th class="right">Ask</th><th class="right">Spread%</th></tr></thead>
                 <tbody>
                   ${Object.values(latestBySymbol).map(r => `<tr>
                     <td style="color:var(--muted)">${fmtTime(r.timestamp)}</td>
@@ -174,25 +174,25 @@ window.AnalysisPage = {
           </div>`;
       }
 
-      contentEl.innerHTML = html || '<div class="card" style="color:var(--subtle)">Veri yok — raporu çalıştırın.</div>';
+      contentEl.innerHTML = html || '<div class="card" style="color:var(--subtle)">No data — run the report.</div>';
 
     } catch (err) {
-      if (contentEl) contentEl.innerHTML = `<div class="card" style="color:#ef4444">Hata: ${esc(err.message)}</div>`;
+      if (contentEl) contentEl.innerHTML = `<div class="card" style="color:#ef4444">Error: ${esc(err.message)}</div>`;
     }
   },
 
   async runReport() {
     const btn = document.getElementById('btn-run-report');
     const statusEl = document.getElementById('phase1-status');
-    if (btn) { btn.textContent = '⏳ Başlatılıyor...'; btn.disabled = true; }
+    if (btn) { btn.textContent = '⏳ Starting...'; btn.disabled = true; }
     try {
       const res = await apiPost('/api/phase1/run');
       if (!res) return;
-      if (statusEl) statusEl.textContent = res.message || 'Rapor çalışıyor...';
+      if (statusEl) statusEl.textContent = res.message || 'Report running...';
       this._startPoll();
     } catch (err) {
-      alert('Rapor başlatılamadı: ' + err.message);
-      if (btn) { btn.textContent = '▶ Raporu Çalıştır'; btn.disabled = false; }
+      alert('Failed to start report: ' + err.message);
+      if (btn) { btn.textContent = '▶ Run Report'; btn.disabled = false; }
     }
   },
 

@@ -15,47 +15,47 @@ window.HistoryPage = {
         <!-- Summary -->
         <div class="stats-grid" style="margin-bottom:16px">
           <div class="stat-card">
-            <div class="stat-label">Toplam Alım</div>
+            <div class="stat-label">Total Buys</div>
             <div class="stat-value">${buyCount}</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Toplam Satım</div>
+            <div class="stat-label">Total Sells</div>
             <div class="stat-value">${sellCount}</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Gerçekleşmiş P&amp;L</div>
+            <div class="stat-label">Realized P&amp;L</div>
             <div class="stat-value ${totalPnl >= 0 ? 'green' : 'red'}">${fmt$(totalPnl)}</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Toplam İşlem</div>
+            <div class="stat-label">Total Trades</div>
             <div class="stat-value">${trades.length}</div>
           </div>
         </div>
 
         <!-- Table -->
         <div class="card">
-          <div class="card-title">📋 İşlem Geçmişi</div>
+          <div class="card-title">📋 Trade History</div>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Tarih</th>
-                  <th>Sembol</th>
-                  <th>Tip</th>
-                  <th class="right">Tutar</th>
-                  <th class="right">Fiyat</th>
+                  <th>Date</th>
+                  <th>Symbol</th>
+                  <th>Type</th>
+                  <th class="right">Amount</th>
+                  <th class="right">Price</th>
                   <th class="right">P&amp;L</th>
-                  <th>Neden</th>
+                  <th>Reason</th>
                 </tr>
               </thead>
               <tbody>
                 ${trades.length === 0
-                  ? '<tr><td colspan="7" style="color:var(--subtle);padding-top:12px">İşlem geçmişi yok</td></tr>'
+                  ? '<tr><td colspan="7" style="color:var(--subtle);padding-top:12px">No trade history</td></tr>'
                   : trades.map(t => `
                     <tr>
                       <td style="color:var(--muted)">${fmtTime(t.ts)}</td>
                       <td style="font-weight:600">${esc(t.symbol)}</td>
-                      <td><span class="badge badge-${t.action === 'buy' ? 'buy' : 'sell'}">${t.action === 'buy' ? 'ALIŞ' : 'SATIŞ'}</span></td>
+                      <td><span class="badge badge-${t.action === 'buy' ? 'buy' : 'sell'}">${t.action === 'buy' ? 'BUY' : 'SELL'}</span></td>
                       <td class="right">${fmt$(t.amount)}</td>
                       <td class="right">${fmt$(t.price)}</td>
                       <td class="right" style="color:${t.pnl == null ? 'inherit' : t.pnl >= 0 ? 'var(--green)' : 'var(--red)'}">${t.pnl != null ? fmt$(t.pnl) : '—'}</td>
@@ -69,7 +69,7 @@ window.HistoryPage = {
         </div>
       `;
     } catch (err) {
-      container.innerHTML = `<div style="color:var(--red)">Hata: ${err.message}</div>`;
+      container.innerHTML = `<div style="color:var(--red)">Error: ${err.message}</div>`;
     }
   }
 };

@@ -33,28 +33,28 @@ window.SettingsPage = {
             `).join('')}
           </div>
           <div class="add-row">
-            <input id="new-symbol" class="input-field" placeholder="Sembol ekle (örn: TSLA)" style="flex:1">
-            <button class="btn-primary" onclick="SettingsPage.addTag()">+ Ekle</button>
+            <input id="new-symbol" class="input-field" placeholder="Add symbol (e.g. TSLA)" style="flex:1">
+            <button class="btn-primary" onclick="SettingsPage.addTag()">+ Add</button>
           </div>
         </div>
 
         <!-- Final Score -->
         <div class="card" style="margin-bottom:16px">
-          <div class="card-title">🎯 Final Skor</div>
+          <div class="card-title">🎯 Final Score</div>
           <div style="color:var(--muted);font-size:11px;margin-bottom:12px">
-            Piyasa(%30) + RS(%25) + Teknik(%20) + Breadth(%15) + ADX(%10) → 0–100
+            Market(30%) + RS(25%) + Technical(20%) + Breadth(15%) + ADX(10%) → 0–100
           </div>
           <div class="grid-2">
             <div>
               <div class="field-row">
-                <span class="field-label" title="Bu skoru geçen semboller alınır">Alım eşiği</span>
+                <span class="field-label" title="Symbols scoring above this threshold are bought">Buy threshold</span>
                 <input id="entry-score" class="input-field small" type="number" value="${strategy.entry_score ?? 70}">
                 <span style="color:var(--subtle);font-size:11px">/100</span>
               </div>
             </div>
             <div>
               <div class="field-row">
-                <span class="field-label" title="Bu skoru geçen semboller daha büyük pozisyonla alınır">Strong Buy eşiği</span>
+                <span class="field-label" title="Symbols scoring above this get a larger position">Strong Buy threshold</span>
                 <input id="strong-buy-score" class="input-field small" type="number" value="${strategy.strong_buy_score ?? 85}">
                 <span style="color:var(--subtle);font-size:11px">/100</span>
               </div>
@@ -64,34 +64,34 @@ window.SettingsPage = {
 
         <!-- AI Decision -->
         <div class="card" style="margin-bottom:16px">
-          <div class="card-title">🤖 AI Kararı</div>
+          <div class="card-title">🤖 AI Decision</div>
           <div class="grid-2">
             <div>
               <div class="field-row">
-                <span class="field-label" title="disabled: AI kapalı | gate: yalnızca son kapı | override: near-miss için de sorgula">AI modu</span>
+                <span class="field-label" title="disabled: AI off | gate: final gate only | override: also query near-misses">AI mode</span>
                 <select id="ai-mode" class="input-field small" onchange="SettingsPage._toggleAiMinScore()">
-                  <option value="disabled" ${(strategy.ai_mode ?? 'override') === 'disabled' ? 'selected' : ''}>disabled — kapalı</option>
-                  <option value="gate"     ${(strategy.ai_mode ?? 'override') === 'gate'     ? 'selected' : ''}>gate — son kapı</option>
-                  <option value="override" ${(strategy.ai_mode ?? 'override') === 'override' ? 'selected' : ''}>override — near-miss'i de sorgula</option>
+                  <option value="disabled" ${(strategy.ai_mode ?? 'override') === 'disabled' ? 'selected' : ''}>disabled — off</option>
+                  <option value="gate"     ${(strategy.ai_mode ?? 'override') === 'gate'     ? 'selected' : ''}>gate — final gate</option>
+                  <option value="override" ${(strategy.ai_mode ?? 'override') === 'override' ? 'selected' : ''}>override — query near-misses too</option>
                 </select>
               </div>
             </div>
             <div id="ai-min-score-row" style="${(strategy.ai_mode ?? 'override') === 'disabled' ? 'opacity:0.35;pointer-events:none' : ''}">
               <div class="field-row">
-                <span class="field-label" title="AI'ın sorgulanacağı minimum Final Skor (override ve gate modunda)">AI min skor</span>
+                <span class="field-label" title="Minimum Final Score for AI to be queried (override and gate modes)">AI min score</span>
                 <input id="ai-min-score" class="input-field small" type="number" value="${strategy.ai_min_score ?? 50}">
                 <span style="color:var(--subtle);font-size:11px">/100</span>
               </div>
             </div>
           </div>
           <div class="field-row" style="margin-top:8px">
-            <span class="field-label" title="Günlük maksimum AI sorgu sayısı">AI günlük limit</span>
+            <span class="field-label" title="Maximum AI queries per day">AI daily limit</span>
             <input id="ai-daily-limit" class="input-field small" type="number" value="${ai.daily_call_limit ?? 200}">
-            <span style="color:var(--subtle);font-size:11px">istek/gün</span>
+            <span style="color:var(--subtle);font-size:11px">calls/day</span>
           </div>
           <div style="color:var(--muted);font-size:11px;margin-top:8px">
-            <b>gate:</b> tüm filtreler geçince AI onaylar/reddeder &nbsp;|&nbsp;
-            <b>override:</b> min skoru aşan near-miss'ler için AI BUY diyebilir
+            <b>gate:</b> AI approves/rejects after all filters pass &nbsp;|&nbsp;
+            <b>override:</b> AI can promote near-misses above min score to BUY
           </div>
         </div>
 
@@ -99,37 +99,37 @@ window.SettingsPage = {
         <div class="card" style="margin-bottom:16px">
           <div class="card-title">🔍 Crypto Scanner</div>
           <div style="color:var(--muted);font-size:11px;margin-bottom:12px">
-            Her döngüde ~45 kripto tarar, RS+Hacim+ADX+BTCgücü+RSI skorlar, top N adayı otomatik alır.
+            Scans ~45 cryptos each cycle, scores RS+Volume+ADX+BTC strength+RSI, auto-buys top N candidates.
           </div>
           <div class="field-row">
-            <span class="field-label">Scanner aktif</span>
+            <span class="field-label">Scanner enabled</span>
             <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
               <input id="cs-enabled" type="checkbox" ${cs.enabled !== false ? 'checked' : ''}>
-              <span style="font-size:12px;color:var(--muted)">açık</span>
+              <span style="font-size:12px;color:var(--muted)">on</span>
             </label>
           </div>
           <div class="grid-2" style="margin-top:8px">
             <div>
               <div class="field-row">
-                <span class="field-label" title="Aynı anda açık tutulacak max crypto scanner pozisyon sayısı">Max pozisyon</span>
+                <span class="field-label" title="Max simultaneous open crypto scanner positions">Max positions</span>
                 <input id="cs-max-positions" class="input-field small" type="number" value="${cs.max_positions ?? 3}">
               </div>
               <div class="field-row">
-                <span class="field-label" title="Bu skoru geçen coinler alınır (0-100)">Min skor</span>
+                <span class="field-label" title="Coins scoring above this are bought (0-100)">Min score</span>
                 <input id="cs-min-score" class="input-field small" type="number" value="${cs.min_score ?? 65}">
                 <span style="color:var(--subtle);font-size:11px">/100</span>
               </div>
             </div>
             <div>
               <div class="field-row">
-                <span class="field-label" title="Kaç coin alım adayı olarak seçilir">Top N</span>
+                <span class="field-label" title="How many coins are selected as buy candidates">Top N</span>
                 <input id="cs-top-n" class="input-field small" type="number" value="${cs.top_n ?? 5}">
               </div>
               <div class="field-row">
-                <span class="field-label" title="BTC 1H fiyatı EMA50 altındaysa alım yok">BTC EMA gate</span>
+                <span class="field-label" title="No buys when BTC 1H price is below EMA50">BTC EMA gate</span>
                 <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
                   <input id="cs-btc-gate" type="checkbox" ${cs.btc_ema_gate !== false ? 'checked' : ''}>
-                  <span style="font-size:12px;color:var(--muted)">aktif</span>
+                  <span style="font-size:12px;color:var(--muted)">active</span>
                 </label>
               </div>
             </div>
@@ -141,7 +141,7 @@ window.SettingsPage = {
           <div class="card">
             <div class="card-title">💰 Budget</div>
             <div class="field-row">
-              <span class="field-label">Nakit rezerv (min)</span>
+              <span class="field-label">Min cash reserve</span>
               <input id="min-cash" class="input-field small" value="${safety.min_cash_reserve ?? 100}">
               <span style="color:var(--subtle);font-size:11px">$</span>
             </div>
@@ -161,8 +161,8 @@ window.SettingsPage = {
               `).join('')}
             </div>
             <div class="add-row" style="margin-top:6px">
-              <input id="pa-symbol" class="input-field" placeholder="SEMBOL" style="width:70px">
-              <input id="pa-amount" class="input-field" type="number" placeholder="Miktar $" style="flex:1">
+              <input id="pa-symbol" class="input-field" placeholder="SYMBOL" style="width:70px">
+              <input id="pa-amount" class="input-field" type="number" placeholder="Amount $" style="flex:1">
               <button class="btn-secondary" onclick="SettingsPage.addPerAsset()">+</button>
             </div>
           </div>
@@ -176,59 +176,59 @@ window.SettingsPage = {
             <div class="field-row">
               <span class="field-label">Cooldown</span>
               <input id="cooldown" class="input-field small" value="${strategy.cooldown_hours ?? 2}">
-              <span style="color:var(--subtle);font-size:11px">saat</span>
+              <span style="color:var(--subtle);font-size:11px">hours</span>
             </div>
             <div class="field-row">
-              <span class="field-label">Max günlük işlem</span>
+              <span class="field-label">Max daily trades</span>
               <input id="max-daily" class="input-field small" value="${strategy.max_daily_trades ?? 10}">
-              <span style="color:var(--subtle);font-size:11px">adet</span>
+              <span style="color:var(--subtle);font-size:11px">trades</span>
             </div>
           </div>
         </div>
 
         <!-- Strategy Filters -->
         <div class="card" style="margin-bottom:16px">
-          <div class="card-title">⚙️ Strateji Filtreleri</div>
+          <div class="card-title">⚙️ Strategy Filters</div>
           <div class="grid-2">
             <div>
               <div class="field-row">
-                <span class="field-label" title="Alım için gereken minimum piyasa durumu">Min piyasa durumu</span>
+                <span class="field-label" title="Minimum market state required to buy">Min market state</span>
                 <select id="min-global-state" class="input-field small">
                   <option value="RISK_ON"      ${(strategy.min_global_state ?? 'RISK_ON') === 'RISK_ON'      ? 'selected' : ''}>RISK_ON</option>
                   <option value="RISK_NEUTRAL" ${(strategy.min_global_state ?? 'RISK_ON') === 'RISK_NEUTRAL' ? 'selected' : ''}>RISK_NEUTRAL</option>
                 </select>
               </div>
               <div class="field-row">
-                <span class="field-label" title="Minimum ADX değeri (trend gücü)">ADX eşiği</span>
+                <span class="field-label" title="Minimum ADX value (trend strength)">ADX threshold</span>
                 <input id="adx-threshold" class="input-field small" type="number" value="${strategy.adx_threshold ?? 20}">
               </div>
               <div class="field-row">
-                <span class="field-label" title="Minimum RS skoru (0-100)">RS skoru eşiği</span>
+                <span class="field-label" title="Minimum RS score (0-100)">RS score threshold</span>
                 <input id="rs-threshold" class="input-field small" type="number" value="${strategy.rs_threshold ?? 70}">
               </div>
               <div class="field-row">
-                <span class="field-label" title="Minimum teknik skor (RSI+MACD+Vol+ATR)">Teknik skor eşiği</span>
+                <span class="field-label" title="Minimum technical score (RSI+MACD+Vol+ATR)">Technical threshold</span>
                 <input id="technical-threshold" class="input-field small" type="number" value="${strategy.technical_threshold ?? 65}">
               </div>
             </div>
             <div>
               <div class="field-row">
-                <span class="field-label" title="Korelasyon engel eşiği (0-1)">Maks korelasyon</span>
+                <span class="field-label" title="Correlation block threshold (0-1)">Max correlation</span>
                 <input id="correlation-max" class="input-field small" type="number" step="0.05" value="${strategy.correlation_max ?? 0.85}">
               </div>
               <div class="field-row">
-                <span class="field-label" title="MA50 üzerinde olması gereken min sektör sayısı (11 sektörden)">Min breadth sektör</span>
+                <span class="field-label" title="Min sectors above MA50 (out of 11)">Min breadth sectors</span>
                 <input id="breadth-min-sectors" class="input-field small" type="number" value="${strategy.breadth_min_sectors ?? 4}">
               </div>
               <div class="field-row">
-                <span class="field-label" title="Kazanç raporundan kaç gün önce blok">Kazanç öncesi blok</span>
+                <span class="field-label" title="Days before earnings report to block entry">Earnings block before</span>
                 <input id="earnings-days-before" class="input-field small" type="number" value="${strategy.earnings_days_before ?? 5}">
-                <span style="color:var(--subtle);font-size:11px">gün</span>
+                <span style="color:var(--subtle);font-size:11px">days</span>
               </div>
               <div class="field-row">
-                <span class="field-label" title="Kazanç raporundan kaç gün sonra blok">Kazanç sonrası blok</span>
+                <span class="field-label" title="Days after earnings report to block entry">Earnings block after</span>
                 <input id="earnings-days-after" class="input-field small" type="number" value="${strategy.earnings_days_after ?? 2}">
-                <span style="color:var(--subtle);font-size:11px">gün</span>
+                <span style="color:var(--subtle);font-size:11px">days</span>
               </div>
             </div>
           </div>
@@ -237,11 +237,11 @@ window.SettingsPage = {
         <!-- Save -->
         <div style="display:flex;justify-content:flex-end;align-items:center;gap:12px">
           <span id="save-status" style="color:var(--muted);font-size:12px"></span>
-          <button class="btn-primary" onclick="SettingsPage.save()">💾 Kaydet</button>
+          <button class="btn-primary" onclick="SettingsPage.save()">💾 Save</button>
         </div>
       `;
     } catch (err) {
-      container.innerHTML = `<div style="color:var(--red)">Hata: ${err.message}</div>`;
+      container.innerHTML = `<div style="color:var(--red)">Error: ${err.message}</div>`;
     }
   },
 
@@ -307,12 +307,12 @@ window.SettingsPage = {
       const statusEl = document.getElementById('save-status');
       if (statusEl) {
         statusEl.style.color = 'var(--green)';
-        statusEl.textContent = '✓ Watchlist kaydedildi';
+        statusEl.textContent = '✓ Watchlist saved';
         setTimeout(() => { statusEl.textContent = ''; }, 2000);
       }
     } catch (err) {
       const statusEl = document.getElementById('save-status');
-      if (statusEl) { statusEl.style.color = 'var(--red)'; statusEl.textContent = 'Hata: ' + err.message; }
+      if (statusEl) { statusEl.style.color = 'var(--red)'; statusEl.textContent = 'Error: ' + err.message; }
     }
   },
 
@@ -329,7 +329,7 @@ window.SettingsPage = {
       const val = parseFloat(document.getElementById(id).value);
       if (isNaN(val)) {
         statusEl.style.color = 'var(--red)';
-        statusEl.textContent = `Hata: "${id}" için geçerli sayı girin`;
+        statusEl.textContent = `Error: enter a valid number for "${id}"`;
         return;
       }
     }
@@ -337,12 +337,12 @@ window.SettingsPage = {
     for (const input of document.querySelectorAll('.pa-amount')) {
       if (isNaN(parseFloat(input.value))) {
         statusEl.style.color = 'var(--red)';
-        statusEl.textContent = 'Hata: Per-asset miktar için geçerli sayı girin';
+        statusEl.textContent = 'Error: enter a valid number for per-asset amount';
         return;
       }
     }
 
-    statusEl.textContent = 'Kaydediliyor...';
+    statusEl.textContent = 'Saving...';
     statusEl.style.color = 'var(--muted)';
 
     // Re-fetch config to get current dry_run value (may have changed via dashboard toggle)
@@ -398,11 +398,11 @@ window.SettingsPage = {
     try {
       await apiPost('/api/config', updates);
       statusEl.style.color = 'var(--green)';
-      statusEl.textContent = '✓ Kaydedildi';
+      statusEl.textContent = '✓ Saved';
       setTimeout(() => { statusEl.textContent = ''; }, 3000);
     } catch (err) {
       statusEl.style.color = 'var(--red)';
-      statusEl.textContent = 'Hata: ' + err.message;
+      statusEl.textContent = 'Error: ' + err.message;
     }
   }
 };

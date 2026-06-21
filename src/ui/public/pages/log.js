@@ -7,24 +7,24 @@ window.LogPage = {
 
     container.innerHTML = `
       <div style="display:flex;gap:8px;margin-bottom:12px">
-        <button id="tab-decisions" class="btn-primary"  onclick="LogPage.showTab('decisions')">🧠 Kararlar</button>
-        <button id="tab-rawlog"    class="btn-secondary" onclick="LogPage.showTab('rawlog')">📝 Ham Log</button>
+        <button id="tab-decisions" class="btn-primary"  onclick="LogPage.showTab('decisions')">🧠 Decisions</button>
+        <button id="tab-rawlog"    class="btn-secondary" onclick="LogPage.showTab('rawlog')">📝 Raw Log</button>
       </div>
 
       <!-- Decisions tab -->
       <div id="tab-decisions-panel">
         <div class="card" style="margin-bottom:12px">
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-            <div class="card-title" style="margin-bottom:0">Son Kararlar</div>
+            <div class="card-title" style="margin-bottom:0">Recent Decisions</div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <input id="dec-filter-sym"  class="input-field" placeholder="Sembol filtrele" style="width:110px" oninput="LogPage.renderDecisions()">
+              <input id="dec-filter-sym"  class="input-field" placeholder="Filter symbol" style="width:110px" oninput="LogPage.renderDecisions()">
               <select id="dec-filter-act" class="input-field" style="width:110px" onchange="LogPage.renderDecisions()">
-                <option value="">Tüm kararlar</option>
-                <option value="buy">Alım</option>
-                <option value="sell">Satım</option>
-                <option value="hold">Bekle</option>
+                <option value="">All decisions</option>
+                <option value="buy">Buy</option>
+                <option value="sell">Sell</option>
+                <option value="hold">Hold</option>
               </select>
-              <button class="btn-secondary" onclick="LogPage.loadDecisions()">↻ Yenile</button>
+              <button class="btn-secondary" onclick="LogPage.loadDecisions()">↻ Refresh</button>
             </div>
           </div>
         </div>
@@ -37,8 +37,8 @@ window.LogPage = {
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
             <div class="card-title" style="margin-bottom:0">📝 Bot Log</div>
             <div style="display:flex;gap:8px;align-items:center">
-              <span id="log-status" style="color:var(--subtle);font-size:11px">Bağlanıyor...</span>
-              <button class="btn-secondary" onclick="LogPage.clearDisplay()">Ekranı Temizle</button>
+              <span id="log-status" style="color:var(--subtle);font-size:11px">Connecting...</span>
+              <button class="btn-secondary" onclick="LogPage.clearDisplay()">Clear</button>
             </div>
           </div>
           <div id="log-panel" class="log-panel"></div>
@@ -68,7 +68,7 @@ window.LogPage = {
       this.renderDecisions();
     } catch (err) {
       document.getElementById('decisions-table-wrap').innerHTML =
-        `<div style="color:var(--red)">Hata: ${err.message}</div>`;
+        `<div style="color:var(--red)">Error: ${err.message}</div>`;
     }
   },
 
@@ -84,7 +84,7 @@ window.LogPage = {
 
     if (!rows.length) {
       document.getElementById('decisions-table-wrap').innerHTML =
-        '<div style="color:var(--muted);padding:16px;text-align:center">Henüz karar kaydı yok</div>';
+        '<div style="color:var(--muted);padding:16px;text-align:center">No decision records yet</div>';
       return;
     }
 
@@ -95,9 +95,9 @@ window.LogPage = {
     };
 
     const fmtDecision = (d) => {
-      if (d.decision === 'buy')  return `<span style="color:var(--green);font-weight:600">ALIM L${d.tranche || '?'}</span>`;
-      if (d.decision === 'sell') return `<span style="color:var(--red);font-weight:600">SATIM</span>`;
-      return `<span style="color:var(--muted)">bekle</span>`;
+      if (d.decision === 'buy')  return `<span style="color:var(--green);font-weight:600">BUY L${d.tranche || '?'}</span>`;
+      if (d.decision === 'sell') return `<span style="color:var(--red);font-weight:600">SELL</span>`;
+      return `<span style="color:var(--muted)">hold</span>`;
     };
 
     const fmtNum = (v, dec = 1) => v != null ? Number(v).toFixed(dec) : '—';
@@ -113,28 +113,28 @@ window.LogPage = {
         <table style="width:100%;border-collapse:collapse;font-size:12px">
           <thead>
             <tr style="border-bottom:1px solid var(--border);color:var(--muted);text-align:left">
-              <th style="padding:6px 8px;white-space:nowrap">Zaman</th>
-              <th style="padding:6px 8px">Sembol</th>
-              <th style="padding:6px 8px;text-align:right">Fiyat</th>
-              <th style="padding:6px 8px;text-align:right">Değ%</th>
-              <th style="padding:6px 8px">Piyasa</th>
+              <th style="padding:6px 8px;white-space:nowrap">Time</th>
+              <th style="padding:6px 8px">Symbol</th>
+              <th style="padding:6px 8px;text-align:right">Price</th>
+              <th style="padding:6px 8px;text-align:right">Chg%</th>
+              <th style="padding:6px 8px">Market</th>
               <th style="padding:6px 8px;text-align:right">Breadth</th>
               <th style="padding:6px 8px">Trend</th>
               <th style="padding:6px 8px;text-align:right">ADX</th>
               <th style="padding:6px 8px;text-align:right">Final</th>
               <th style="padding:6px 8px;text-align:right">RS</th>
-              <th style="padding:6px 8px;text-align:right" title="Teknik skor — üzerine gel: RSI/MACD/Vol/ATR alt kırılımı">Tek.</th>
+              <th style="padding:6px 8px;text-align:right" title="Technical score — hover for RSI/MACD/Vol/ATR breakdown">Tech</th>
               <th style="padding:6px 8px;text-align:right">RSI</th>
-              <th style="padding:6px 8px;text-align:center" title="Piyasa / Breadth / Trend / ADX / RS / Teknik / Earnings / Korelasyon / AI">Filtreler</th>
-              <th style="padding:6px 8px">Karar</th>
-              <th style="padding:6px 8px;max-width:200px">Sebep</th>
+              <th style="padding:6px 8px;text-align:center" title="Market / Breadth / Trend / ADX / RS / Tech / Earnings / Correlation / AI">Filters</th>
+              <th style="padding:6px 8px">Decision</th>
+              <th style="padding:6px 8px;max-width:200px">Reason</th>
             </tr>
           </thead>
           <tbody>
             ${rows.map((d, idx) => {
               const f = d.filters || {};
-              const ts = d.ts ? new Date(d.ts).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '—';
-              const date = d.ts ? new Date(d.ts).toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit' }) : '';
+              const ts = d.ts ? new Date(d.ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '—';
+              const date = d.ts ? new Date(d.ts).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' }) : '';
               const rowColor = d.decision === 'buy' ? 'background:rgba(0,255,0,0.03)' :
                                d.decision === 'sell' ? 'background:rgba(255,0,0,0.03)' : '';
 
@@ -142,7 +142,7 @@ window.LogPage = {
               let aiBtn = fmtFilter(f.ai_audit);
               if (d.ai_prompt) {
                 this._aiData[idx] = { prompt: d.ai_prompt, verdict: d.ai_verdict, reason: d.ai_reason };
-                aiBtn = `<span style="cursor:pointer;letter-spacing:0" onclick="LogPage.showAiPrompt(${idx})" title="AI sorgusunu gör">${fmtFilter(f.ai_audit)}🔍</span>`;
+                aiBtn = `<span style="cursor:pointer;letter-spacing:0" onclick="LogPage.showAiPrompt(${idx})" title="View AI query">${fmtFilter(f.ai_audit)}🔍</span>`;
               }
 
               return `<tr style="border-bottom:1px solid var(--border);${rowColor}">
@@ -182,7 +182,7 @@ window.LogPage = {
     const es = new EventSource('/api/logs');
     window._activeSSE = es;
 
-    es.onopen = () => { statusEl.textContent = '● Canlı'; statusEl.style.color = 'var(--green)'; };
+    es.onopen = () => { statusEl.textContent = '● Live'; statusEl.style.color = 'var(--green)'; };
 
     es.onmessage = (e) => {
       const line = JSON.parse(e.data);
@@ -198,7 +198,7 @@ window.LogPage = {
       panel.scrollTop = panel.scrollHeight;
     };
 
-    es.onerror = () => { statusEl.textContent = '● Bağlantı kesildi'; statusEl.style.color = 'var(--red)'; };
+    es.onerror = () => { statusEl.textContent = '● Disconnected'; statusEl.style.color = 'var(--red)'; };
   },
 
   showAiPrompt(idx) {
@@ -212,13 +212,13 @@ window.LogPage = {
     modal.innerHTML = `
       <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;max-width:600px;width:100%;max-height:80vh;overflow-y:auto;padding:20px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <div style="font-weight:600;font-size:13px">🤖 AI Sorgusu</div>
+          <div style="font-weight:600;font-size:13px">🤖 AI Query</div>
           <button onclick="document.getElementById('ai-prompt-modal').remove()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px">✕</button>
         </div>
-        <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Gönderilen prompt:</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Sent prompt:</div>
         <pre style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:12px;font-size:11px;white-space:pre-wrap;word-break:break-word;color:var(--text)">${(data.prompt || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>
         <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
-          <span style="font-size:11px;color:var(--muted)">Yanıt: </span>
+          <span style="font-size:11px;color:var(--muted)">Response: </span>
           <span style="font-weight:600;color:${data.verdict === 'BUY' ? 'var(--green)' : 'var(--red)'}">${data.verdict ?? '—'}</span>
           <span style="font-size:11px;color:var(--muted);margin-left:8px">${(data.reason || '').replace(/</g,'&lt;')}</span>
         </div>
