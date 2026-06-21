@@ -762,6 +762,8 @@ async function runCycle() {
       if (decision.action === 'buy') {
         // Defer buy — will be sorted by RS score before execution
         buyCandidates.push({ symbol, pos, currentPrice, changePct, assetRegime, decision, rsScore: isCryptoCandidate ? cryptoCandidates[symbol].score : (rsScore ?? 0), techScore, techResult, marketScore, filterLog, decisionData, tier: decisionData.tier, isDCA: false });
+        // Clear rejection count so symbol starts fresh after being bought
+        if (state.rejection_counts?.[symbol]) delete state.rejection_counts[symbol];
       } else {
         // ── Crypto DCA: geçmiş fiyata göre alım (parça parça alış) ───────────
         // Scanner pozisyonu var ve fiyat avg_cost'un dca_dip_pct% altına düştüyse
@@ -791,21 +793,17 @@ async function runCycle() {
           logDecision({ ...decisionData, filters: filterLog, decision: 'hold', failReason: decision.reason });
 
           // Track rejection counts for cooldown (only watchlist symbols, not open positions)
+          // Normalize: strip AI comment so "Final skor: 54 < 63 | AI: [varies]" → "Final skor: 54 < 63"
           if ((pos.quantity || 0) === 0 && decision.reason) {
             if (!state.rejection_counts) state.rejection_counts = {};
+            const cooldownKey = decision.reason.split(' | AI:')[0];
             const prev = state.rejection_counts[symbol];
-            if (prev && prev.reason === decision.reason) {
-              state.rejection_counts[symbol] = { reason: decision.reason, count: prev.count + 1, since: prev.since };
+            if (prev && prev.reason === cooldownKey) {
+              state.rejection_counts[symbol] = { reason: cooldownKey, count: prev.count + 1, since: prev.since };
             } else {
-              // Reason changed — reset counter; new since timestamp
-              state.rejection_counts[symbol] = { reason: decision.reason, count: 1, since: new Date().toISOString() };
+              state.rejection_counts[symbol] = { reason: cooldownKey, count: 1, since: new Date().toISOString() };
             }
           }
-        }
-      } else {
-        // Symbol is going to buy — clear any rejection count so it starts fresh after exit
-        if (state.rejection_counts?.[symbol]) {
-          delete state.rejection_counts[symbol];
         }
       }
     }

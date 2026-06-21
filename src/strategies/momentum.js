@@ -77,17 +77,7 @@ function checkExitTrigger({ pos, currentPrice, assetRegime, currentMarketState, 
     return { exit: true, portion: 1, reason: 'Market state: PANIC → tüm pozisyon kapatıldı' };
   }
 
-  // TEMEL KURAL: Zararda satış yasak.
-  // Fiyat ort. maliyetin altındaysa hiçbir çıkış tetiklenmez — pozisyon tutulur.
-  // (avg_cost bilinmiyorsa bu blok atlanır, aşağıdaki tetikleyiciler çalışır.)
-  if (pos.avg_cost && currentPrice < pos.avg_cost) {
-    return {
-      exit: false,
-      _skipped: `Zararda ($${currentPrice.toFixed(2)} < ort. maliyet $${pos.avg_cost.toFixed(2)}) — zarar realizasyonu engellendi`,
-    };
-  }
-
-  // Trigger 1: ATR trailing stop — karda veya başabaş fiyatta tetiklenir
+  // Trigger 1: ATR trailing stop — her koşulda tetiklenir (karda veya zararda)
   if (pos.stop_price && currentPrice < pos.stop_price) {
     return {
       exit: true, portion: 1,

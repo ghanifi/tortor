@@ -89,6 +89,16 @@ describe('checkExitTrigger — trigger 1 ATR stop', () => {
     expect(r.reason).toMatch(/ATR stop/);
   });
 
+  test('ATR stop fires even when below avg_cost (no zararda override)', () => {
+    const r = checkExitTrigger({
+      pos: { stop_price: 80, avg_cost: 100 }, currentPrice: 75,
+      assetRegime: BULL_REGIME,
+      currentMarketState: 'RISK_ON', prevMarketState: 'RISK_ON'
+    });
+    expect(r.exit).toBe(true);
+    expect(r.reason).toMatch(/ATR stop/);
+  });
+
   test('price above stop_price → no ATR exit', () => {
     const r = checkExitTrigger({
       pos: { stop_price: 85 }, currentPrice: 100,
