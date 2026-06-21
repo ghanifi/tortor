@@ -379,6 +379,14 @@ async function runCycle() {
       if (p.pnlUsd != null) state.positions[sym].etoro_pnl_usd = p.pnlUsd;
       if (!state.positions[sym].avg_cost && p.avgCost) {
         state.positions[sym].avg_cost = p.avgCost;
+        // Stop was likely initialized from current price (avg_cost was null then).
+        // If avg_cost is now set and is far above the existing stop, reset stop
+        // so it gets recalculated correctly from avg_cost in the exit section.
+        const existingStop = state.positions[sym].stop_price;
+        if (existingStop != null && p.avgCost > existingStop * 1.5) {
+          state.positions[sym].stop_price = null;
+          console.log(`[Portfolio] ${sym}: stop_price $${existingStop.toFixed(4)} sıfırlandı — avg_cost $${p.avgCost.toFixed(4)} çok daha yüksek, yeniden hesaplanacak`);
+        }
       }
       // Ensure entry_at is always set — min_hold protection fails silently if null
       // (null → holdMs=Infinity → "held forever" → min_hold bypassed)
