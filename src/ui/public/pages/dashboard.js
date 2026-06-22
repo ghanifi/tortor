@@ -55,16 +55,16 @@ window.DashboardPage = {
         <!-- Stats row -->
         <div class="stats-grid" style="margin-bottom:16px">
           <div class="stat-card">
-            <div class="stat-label">Nakit</div>
+            <div class="stat-label">Cash</div>
             <div class="stat-value">${fmt$(cash)}</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Portföy</div>
+            <div class="stat-label">Portfolio</div>
             <div class="stat-value">${fmt$(portfolioVal)}</div>
-            <div class="stat-sub">${openPositions.length} pozisyon</div>
+            <div class="stat-sub">${openPositions.length} position${openPositions.length !== 1 ? 's' : ''}</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Toplam P&amp;L</div>
+            <div class="stat-label">Total P&amp;L</div>
             <div class="stat-value ${totalPnl >= 0 ? 'green' : 'red'}">${fmt$(totalPnl)}</div>
             <div class="stat-sub" style="color:${totalPnl >= 0 ? 'var(--green)' : 'var(--red)'}">${fmtPct(totalPnlPct)}</div>
           </div>
@@ -79,8 +79,8 @@ window.DashboardPage = {
         <div class="grid-2" style="margin-bottom:16px">
           <div class="toggle-row">
             <div>
-              <div class="toggle-label">Dry Run Modu</div>
-              <div class="toggle-sub">Gerçek işlem yapılmaz</div>
+              <div class="toggle-label">Dry Run Mode</div>
+              <div class="toggle-sub">No real trades executed</div>
             </div>
             <button id="dry-run-toggle" class="toggle ${dryRun ? 'on' : ''}" onclick="DashboardPage.toggleDryRun()">
               <span class="toggle-thumb"></span>
@@ -90,7 +90,7 @@ window.DashboardPage = {
             <div>
               <div class="toggle-label">Drawdown Stop</div>
               <div class="toggle-sub" style="color:${risk.trades_paused ? 'var(--red)' : 'var(--green)'}">
-                ${risk.trades_paused ? '⚠️ Aktif — alımlar durduruldu' : `Normal — peak ${fmt$(peakVal)}`}
+                ${risk.trades_paused ? '⚠️ Active — buys paused' : `Normal — peak ${fmt$(peakVal)}`}
               </div>
               <div class="toggle-sub">Drawdown: ${fmtPct(drawdownPct)}</div>
             </div>
@@ -101,43 +101,43 @@ window.DashboardPage = {
         <!-- Last cycle decisions -->
         <div class="card">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-            <div class="card-title" style="margin-bottom:0">Son Döngü — Watchlist Durumu</div>
+            <div class="card-title" style="margin-bottom:0">Last Cycle — Watchlist Status</div>
             <div style="display:flex;align-items:center;gap:10px">
               ${lastCheckAge !== null ? `<span style="color:var(--muted);font-size:11px">
-                ${lastCheckAge === 0 ? 'az önce' : lastCheckAge + ' dk önce'}
+                ${lastCheckAge === 0 ? 'just now' : lastCheckAge + ' min ago'}
               </span>` : ''}
-              <span id="dash-refresh-dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green)" title="30s'de bir yenileniyor"></span>
+              <span id="dash-refresh-dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green)" title="Refreshes every 30s"></span>
             </div>
           </div>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Sembol</th>
-                  <th class="right">Fiyat</th>
-                  <th class="right">Değişim</th>
-                  <th>Karar</th>
-                  <th>Piyasa</th>
-                  <th>Neden</th>
+                  <th>Symbol</th>
+                  <th class="right">Price</th>
+                  <th class="right">Change</th>
+                  <th>Decision</th>
+                  <th>Market</th>
+                  <th>Reason</th>
                 </tr>
               </thead>
               <tbody>
                 ${decisions.length === 0
-                  ? '<tr><td colspan="6" style="color:var(--subtle);padding-top:12px">Henüz döngü verisi yok — bir sonraki döngü bekleniyor...</td></tr>'
+                  ? '<tr><td colspan="6" style="color:var(--subtle);padding-top:12px">No cycle data yet — waiting for next cycle...</td></tr>'
                   : decisions.map(d => {
                     const chgColor = d.change == null ? 'inherit' : d.change >= 0 ? 'var(--green)' : 'var(--red)';
                     const badge = d.blocked
-                      ? `<span class="badge" style="background:#92400e;color:#fef3c7">BLOKE</span>`
+                      ? `<span class="badge" style="background:#92400e;color:#fef3c7">BLOCKED</span>`
                       : d.action === 'buy'
-                        ? `<span class="badge badge-buy">ALIŞ</span>`
+                        ? `<span class="badge badge-buy">BUY</span>`
                         : d.action === 'sell'
-                          ? `<span class="badge badge-sell">SATIŞ</span>`
-                          : `<span class="badge">BEKLE</span>`;
+                          ? `<span class="badge badge-sell">SELL</span>`
+                          : `<span class="badge">HOLD</span>`;
                     const marketDot = d.exchange === 'CRYPTO'
                       ? `<span style="color:var(--accent);font-size:11px">⟳ CRYPTO</span>`
                       : d.market_open
-                        ? `<span style="color:var(--green);font-size:11px">● ${esc(d.exchange)} Açık</span>`
-                        : `<span style="color:var(--red);font-size:11px">● ${esc(d.exchange)} Kapalı</span>`;
+                        ? `<span style="color:var(--green);font-size:11px">● ${esc(d.exchange)} Open</span>`
+                        : `<span style="color:var(--red);font-size:11px">● ${esc(d.exchange)} Closed</span>`;
                     return `<tr>
                       <td style="font-weight:600">${esc(d.symbol)}</td>
                       <td class="right">${fmt$(d.price)}</td>
@@ -165,13 +165,13 @@ window.DashboardPage = {
       }, 30000);
 
     } catch (err) {
-      container.innerHTML = `<div style="color:var(--red)">Hata: ${err.message}</div>`;
+      container.innerHTML = `<div style="color:var(--red)">Error: ${err.message}</div>`;
     }
   },
 
   async _renderNearMiss(container, config) {
     const entryScore = config?.strategy?.entry_score ?? 70;
-    const nearMissMin = entryScore - 5; // default 65
+    const nearMissMin = entryScore - 5;
 
     let recentDecisions = [];
     try { recentDecisions = await apiGet('/api/decisions?limit=300'); } catch { return; }
@@ -197,20 +197,20 @@ window.DashboardPage = {
     section.style.marginTop = '16px';
     section.innerHTML = `
       <div class="card-title" style="margin-bottom:8px">
-        🔍 Near Miss — Eşiğe Yakın (${nearMissMin}–${entryScore - 1})
-        <span style="color:var(--muted);font-size:11px;font-weight:normal;margin-left:8px">Son döngü · izle, eşiği düşürme</span>
+        🔍 Near Miss — Close to Threshold (${nearMissMin}–${entryScore - 1})
+        <span style="color:var(--muted);font-size:11px;font-weight:normal;margin-left:8px">Last cycle · watch, don't lower threshold</span>
       </div>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Sembol</th>
+              <th>Symbol</th>
               <th class="right">Final</th>
               <th class="right">RS</th>
-              <th class="right" title="RSI/MACD/Vol/ATR — üzerine gel">Teknik</th>
-              <th class="right">Piyasa</th>
+              <th class="right" title="RSI/MACD/Vol/ATR — hover for breakdown">Tech</th>
+              <th class="right">Market</th>
               <th class="right">Breadth</th>
-              <th>Neden</th>
+              <th>Reason</th>
             </tr>
           </thead>
           <tbody>
@@ -242,7 +242,7 @@ window.DashboardPage = {
       const btn = document.getElementById('dry-run-toggle');
       if (btn) btn.classList.toggle('on', result.dry_run);
     } catch (err) {
-      alert('Hata: ' + err.message);
+      alert('Error: ' + err.message);
     }
   },
 
@@ -252,7 +252,7 @@ window.DashboardPage = {
       const content = document.getElementById('content');
       if (content) DashboardPage.render(content);
     } catch (err) {
-      alert('Hata: ' + err.message);
+      alert('Error: ' + err.message);
     }
   }
 };

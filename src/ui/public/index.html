@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -11,24 +11,24 @@
     <nav id="sidebar">
       <div class="sidebar-header">
         <div class="brand">⚡ eToro Bot</div>
-        <div id="bot-status" class="status-running">● Çalışıyor</div>
+        <div id="bot-status" class="status-running">● Running</div>
       </div>
       <ul class="nav-list">
         <li class="nav-item" data-route="dashboard"  onclick="navigate('dashboard')">📊 Dashboard</li>
-        <li class="nav-item" data-route="portfolio"  onclick="navigate('portfolio')">💼 Portföy</li>
-        <li class="nav-item" data-route="settings"   onclick="navigate('settings')">⚙️ Ayarlar</li>
+        <li class="nav-item" data-route="portfolio"  onclick="navigate('portfolio')">💼 Portfolio</li>
+        <li class="nav-item" data-route="settings"   onclick="navigate('settings')">⚙️ Settings</li>
         <li class="nav-item" data-route="log"        onclick="navigate('log')">📝 Log</li>
-        <li class="nav-item" data-route="history"    onclick="navigate('history')">📋 Geçmiş</li>
-        <li class="nav-item" data-route="analysis"   onclick="navigate('analysis')">🔬 Analiz</li>
+        <li class="nav-item" data-route="history"    onclick="navigate('history')">📋 History</li>
+        <li class="nav-item" data-route="analysis"   onclick="navigate('analysis')">🔬 Analysis</li>
       </ul>
       <div class="sidebar-footer">
-        <div class="last-check-label">Son kontrol</div>
+        <div class="last-check-label">Last check</div>
         <div id="last-check-time" class="last-check-time">—</div>
-        <button class="btn-stop" onclick="stopBot()">⏹ Durdur</button>
+        <button class="btn-stop" onclick="stopBot()">⏹ Stop</button>
       </div>
     </nav>
     <main id="content">
-      <div class="loading">Yükleniyor...</div>
+      <div class="loading">Loading...</div>
     </main>
   </div>
 

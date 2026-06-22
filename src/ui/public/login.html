@@ -1,17 +1,17 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>eToro Bot — Giriş</title>
+  <title>eToro Bot — Login</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="login-body">
   <div class="login-box">
     <div class="login-brand">⚡ eToro Bot</div>
     <form id="login-form">
-      <input type="password" id="password" placeholder="Şifre" class="input-field" autofocus>
-      <button type="submit" class="btn-primary btn-block">Giriş</button>
+      <input type="password" id="password" placeholder="Password" class="input-field" autofocus>
+      <button type="submit" class="btn-primary btn-block">Sign In</button>
       <div id="login-error" class="error-msg"></div>
     </form>
   </div>
@@ -27,7 +27,7 @@
       if (res.ok) {
         window.location.href = '/';
       } else {
-        document.getElementById('login-error').textContent = 'Hatalı şifre';
+        document.getElementById('login-error').textContent = 'Wrong password';
       }
     });
   </script>

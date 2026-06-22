@@ -1,7 +1,7 @@
 // src/ui/public/app.js
 // Global router, fetch wrapper, shared utilities
 
-// ── Fetch wrapper ────────────────────────────────────────
+// ── Fetch wrapper ────────────────────────────────────
 async function api(method, path, body) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (body) opts.body = JSON.stringify(body);
@@ -16,21 +16,21 @@ async function api(method, path, body) {
 async function apiGet(path)       { return api('GET', path); }
 async function apiPost(path, body){ return api('POST', path, body); }
 
-// ── HTML escape ─────────────────────────────────────────
+// ── HTML escape ─────────────────────────────────────
 function esc(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/'/g, '&#39;').replace(/"/g, '&quot;');
 }
 
-// ── Formatters ───────────────────────────────────────────
+// ── Formatters ───────────────────────────────────────
 function fmt$(n) { return n != null ? '$' + Number(n).toFixed(2) : '—'; }
 function fmtPct(n) { return n != null ? (n >= 0 ? '+' : '') + Number(n).toFixed(1) + '%' : '—'; }
 function fmtTime(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
-  return d.toLocaleString('tr-TR', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+  return d.toLocaleString('en-GB', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
 }
 
-// ── Sidebar last-check update ────────────────────────────
+// ── Sidebar last-check update ────────────────────────
 async function updateLastCheck() {
   try {
     const state = await apiGet('/api/state');
@@ -38,24 +38,24 @@ async function updateLastCheck() {
     const el = document.getElementById('last-check-time');
     if (el && state.last_check) {
       const d = new Date(state.last_check);
-      el.textContent = d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+      el.textContent = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
     }
   } catch {}
 }
 
-// ── Stop bot ─────────────────────────────────────────────
+// ── Stop bot ─────────────────────────────────────────
 async function stopBot() {
-  if (!confirm('Botu durdurmak istediğinizden emin misiniz?')) return;
+  if (!confirm('Are you sure you want to stop the bot?')) return;
   try {
     await apiPost('/api/bot/stop');
-    document.getElementById('bot-status').textContent = '● Durduruldu';
+    document.getElementById('bot-status').textContent = '● Stopped';
     document.getElementById('bot-status').style.color = '#ef4444';
   } catch (err) {
-    alert('Hata: ' + err.message);
+    alert('Error: ' + err.message);
   }
 }
 
-// ── Router ───────────────────────────────────────────────
+// ── Router ───────────────────────────────────────────
 const PAGES = {
   dashboard: () => window.DashboardPage.render(content),
   portfolio: () => window.PortfolioPage.render(content),
@@ -78,7 +78,7 @@ function navigate(route) {
     el.classList.toggle('active', el.dataset.route === route);
   });
 
-  content.innerHTML = '<div class="loading">Yükleniyor...</div>';
+  content.innerHTML = '<div class="loading">Loading...</div>';
   const fn = PAGES[route] || PAGES.dashboard;
   fn();
 }
