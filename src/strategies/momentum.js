@@ -72,22 +72,21 @@ function decideMomentum({ pyramidLevel, currentPrice, entryPrice, level2Price, a
  * @returns {{ exit: boolean, portion?: number, reason?: string }}
  */
 function checkExitTrigger({ pos, currentPrice, assetRegime, currentMarketState, prevMarketState, minHoldMinutes = 60 }) {
-  // PANIC: tek istisna — her koşulda acil çıkış
+  // PANIC: hard exit — no AI gate, immediate full close
   if (currentMarketState === 'PANIC') {
-    return { exit: true, portion: 1, reason: 'Market state: PANIC → tüm pozisyon kapatıldı' };
+    return { exit: true, type: 'hard', portion: 1, reason: 'Market state: PANIC → tüm pozisyon kapatıldı' };
   }
 
-  // Trigger 1: ATR trailing stop — her koşulda tetiklenir (karda veya zararda)
+  // Trigger 1: ATR trailing stop — hard exit, fires regardless of profit/loss, no AI gate
   if (pos.stop_price && currentPrice < pos.stop_price) {
     return {
-      exit: true, portion: 1,
+      exit: true, type: 'hard', portion: 1,
       reason: `ATR stop tetiklendi ($${pos.stop_price.toFixed(2)})`,
     };
   }
 
-  // Trigger 2: Trend break (EMA50 < EMA200)
+  // Trigger 2: Trend break (EMA50 < EMA200) — soft exit, AI gate may apply
   if (assetRegime.trend !== 'BULL') {
-    // If entry_at missing (state lost or manual position), assume just entered — conservative
     const holdMs = pos.entry_at ? Date.now() - new Date(pos.entry_at).getTime() : 0;
     const minHoldMs = minHoldMinutes * 60 * 1000;
 
@@ -96,12 +95,12 @@ function checkExitTrigger({ pos, currentPrice, assetRegime, currentMarketState, 
       return { exit: false, _skipped: `Trend kırıldı ama min hold ${minHoldMinutes}dk (${heldMin}dk tutuldu)` };
     }
 
-    return { exit: true, portion: 1, reason: 'Trend kırıldı (EMA50 < EMA200)' };
+    return { exit: true, type: 'soft', portion: 1, reason: 'Trend kırıldı (EMA50 < EMA200)' };
   }
 
-  // Trigger 3: Piyasa bozulması (RISK_OFF geçişi)
+  // Trigger 3: Market deterioration (RISK_OFF transition) — soft exit, AI gate may apply
   if (prevMarketState !== 'RISK_OFF' && currentMarketState === 'RISK_OFF') {
-    return { exit: true, portion: 1, reason: 'Market state: RISK_OFF → pozisyon kapatıldı' };
+    return { exit: true, type: 'soft', portion: 1, reason: 'Market state: RISK_OFF → pozisyon kapatıldı' };
   }
 
   return { exit: false };

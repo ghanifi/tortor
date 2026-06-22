@@ -63,4 +63,57 @@ function buildPrompt({ symbol, price, reason, scores }) {
   return lines.join('\n');
 }
 
-module.exports = { auditTrade, buildPrompt, ESTIMATED_COST_USD };
+/**
+ * Ask Claude Haiku whether to SELL an open profitable position now or HOLD for better exit.
+ * Called when a soft exit trigger (trend-break / RISK_OFF) fires on a profitable position.
+ * Fails open: returns SELL on API error so the trade always has a fallback.
+ *
+ * @param {object} p
+ * @param {string} p.symbol
+ * @param {number} p.price
+ * @param {number} p.avgCost
+ * @param {number} p.profitPct        — (price - avgCost) / avgCost * 100
+ * @param {string} p.trend            — 'BULL' | 'BEAR' | 'SIDEWAYS'
+ * @param {number|null} p.adx
+ * @param {number|null} p.atr
+ * @param {string} p.marketState      — 'RISK_ON' | 'RISK_NEUTRAL' | 'RISK_OFF'
+ * @param {string} p.exitReason       — the trigger that fired
+ * @param {string} [p.model]
+ * @returns {Promise<{ verdict: 'SELL'|'HOLD', reason: string, prompt: string, costUsd: number }>}
+ */
+async function queryExitDirection({ symbol, price, avgCost, profitPct, trend, adx, atr, marketState, exitReason, model = 'claude-haiku-4-5-20251001' }) {
+  const client = new Anthropic();
+  const prompt = buildExitPrompt({ symbol, price, avgCost, profitPct, trend, adx, atr, marketState, exitReason });
+
+  const response = await client.messages.create({
+    model,
+    max_tokens: 80,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const text = (response.content[0]?.text || '').trim();
+  const verdict = text.toUpperCase().startsWith('HOLD') ? 'HOLD' : 'SELL';
+  const reason = text.replace(/^(SELL|HOLD)[.:,\s]*/i, '').trim() || text;
+
+  return { verdict, reason, prompt, costUsd: ESTIMATED_COST_USD };
+}
+
+function buildExitPrompt({ symbol, price, avgCost, profitPct, trend, adx, atr, marketState, exitReason }) {
+  const lines = [
+    `You are managing an open profitable trading position. A sell signal just triggered.`,
+    `Decide: should we exit NOW to lock in profit, or HOLD for a better exit price?`,
+    `Respond with exactly "SELL" or "HOLD" on the first line, then one sentence of reasoning (max 20 words).`,
+    ``,
+    `Symbol: ${symbol} @ $${Number(price).toFixed(4)}`,
+    `Entry avg cost: $${Number(avgCost).toFixed(4)} | Current profit: +${Number(profitPct).toFixed(2)}%`,
+    `Sell trigger: ${exitReason}`,
+    `Trend: ${trend ?? 'N/A'} | ADX: ${adx != null ? Number(adx).toFixed(1) : 'N/A'} | ATR: ${atr != null ? Number(atr).toFixed(4) : 'N/A'}`,
+    `Market: ${marketState ?? 'N/A'}`,
+    ``,
+    `HOLD only if there is strong evidence the price will recover and yield significantly more profit.`,
+    `SELL if the trend break is confirmed, momentum is fading, or profit is already substantial.`,
+  ];
+  return lines.join('\n');
+}
+
+module.exports = { auditTrade, buildPrompt, queryExitDirection, buildExitPrompt, ESTIMATED_COST_USD };

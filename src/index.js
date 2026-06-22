@@ -14,7 +14,7 @@ const { calcPnL, calcTotalPortfolioValue, allocateBudget, calcPositionBudget } =
 const { logEntry, logExit } = require('./analysis/data-lake');
 const { checkEarningsBlock } = require('./analysis/event-engine');
 const { getBreadthState } = require('./analysis/breadth');
-const { auditTrade } = require('./analysis/ai-auditor');
+const { auditTrade, queryExitDirection } = require('./analysis/ai-auditor');
 const { canCallAI, recordCall } = require('./analysis/ai_budget');
 const { logDecision } = require('./analysis/decision-logger');
 const { calcFinalScore, scoreToTier } = require('./analysis/final-score');
@@ -598,6 +598,49 @@ async function runCycle() {
             assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: `Piyasa kapalı (çıkış ertelendi) — ${exitResult.reason}` });
             logDecision({ ...decisionData, decision: 'hold', failReason: `Piyasa kapalı — ${exitResult.reason}` });
             continue;
+          }
+
+          // AI exit gate: for soft exits (trend-break / RISK_OFF) on profitable positions,
+          // ask Claude for a direction call. If AI says HOLD, skip this cycle and wait for
+          // a better exit or for the ATR stop to define the floor. Hard exits (ATR stop,
+          // PANIC) bypass the gate entirely — those are quantitative safety mechanisms.
+          if (
+            exitResult.type === 'soft' &&
+            pos.avg_cost && currentPrice > pos.avg_cost &&
+            config.strategy?.ai_exit_gate !== false
+          ) {
+            const budgetCheck = canCallAI(state);
+            if (budgetCheck.allowed) {
+              try {
+                const profitPct = ((currentPrice - pos.avg_cost) / pos.avg_cost) * 100;
+                const aiExit = await queryExitDirection({
+                  symbol,
+                  price: currentPrice,
+                  avgCost: pos.avg_cost,
+                  profitPct,
+                  trend: assetRegime.trend,
+                  adx: assetRegime.adx,
+                  atr: assetRegime.atr,
+                  marketState: currentMarketState,
+                  exitReason: exitResult.reason,
+                  model: config.ai?.model,
+                });
+                state = recordCall(state, aiExit.costUsd);
+                console.log(`[AI Exit Gate] ${symbol}: ${aiExit.verdict} — ${aiExit.reason}`);
+
+                if (aiExit.verdict === 'HOLD') {
+                  const holdReason = `AI Exit Gate: HOLD — ${aiExit.reason}`;
+                  assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: holdReason });
+                  logDecision({ ...decisionData, decision: 'hold', failReason: holdReason });
+                  continue;
+                }
+              } catch (err) {
+                // Fail open: API error → proceed with sell
+                console.warn(`[AI Exit Gate] ${symbol}: API error, proceeding with sell — ${err.message}`);
+              }
+            } else {
+              console.log(`[AI Exit Gate] ${symbol}: skipped — ${budgetCheck.reason}`);
+            }
           }
 
           state = await executeSell({
