@@ -17,14 +17,14 @@ function decideMomentum({ pyramidLevel, currentPrice, entryPrice, level2Price, a
   // Level 0 → Level 1: initial entry
   if (pyramidLevel === 0) {
     if (!filters.allPass) {
-      return { action: 'hold', tranche: null, reason: filters.failReason || 'Filtre geçilemedi' };
+      return { action: 'hold', tranche: null, reason: filters.failReason || 'Filter not passed' };
     }
-    return { action: 'buy', tranche: 1, reason: 'Momentum giriş L1 — tüm filtreler geçti' };
+    return { action: 'buy', tranche: 1, reason: 'Momentum entry L1 — all filters passed' };
   }
 
   // Level 1 → Level 2: price must clear entry + 1×ATR
   if (pyramidLevel === 1) {
-    if (!entryPrice) return { action: 'hold', tranche: null, reason: 'Piramit L2: entry_price eksik' };
+    if (!entryPrice) return { action: 'hold', tranche: null, reason: 'Pyramid L2: entry_price missing' };
     if (!filters.allPass && filters.failReason?.includes('Market state')) {
       return { action: 'hold', tranche: null, reason: filters.failReason };
     }
@@ -32,15 +32,15 @@ function decideMomentum({ pyramidLevel, currentPrice, entryPrice, level2Price, a
     if (currentPrice > trigger) {
       return {
         action: 'buy', tranche: 2,
-        reason: `Piramit L2 — fiyat ${trigger.toFixed(2)} üzerinde ($${currentPrice.toFixed(2)})`
+        reason: `Pyramid L2 — price above ${trigger.toFixed(2)} ($${currentPrice.toFixed(2)})`
       };
     }
-    return { action: 'hold', tranche: null, reason: `Piramit L2 bekleniyor — hedef $${trigger.toFixed(2)}` };
+    return { action: 'hold', tranche: null, reason: `Pyramid L2 waiting — target $${trigger.toFixed(2)}` };
   }
 
   // Level 2 → Level 3: price must clear level2 + 1×ATR
   if (pyramidLevel === 2) {
-    if (!level2Price) return { action: 'hold', tranche: null, reason: 'Piramit L3: level2_price eksik' };
+    if (!level2Price) return { action: 'hold', tranche: null, reason: 'Pyramid L3: level2_price missing' };
     if (!filters.allPass && filters.failReason?.includes('Market state')) {
       return { action: 'hold', tranche: null, reason: filters.failReason };
     }
@@ -48,14 +48,14 @@ function decideMomentum({ pyramidLevel, currentPrice, entryPrice, level2Price, a
     if (currentPrice > trigger) {
       return {
         action: 'buy', tranche: 3,
-        reason: `Piramit L3 — fiyat ${trigger.toFixed(2)} üzerinde ($${currentPrice.toFixed(2)})`
+        reason: `Pyramid L3 — price above ${trigger.toFixed(2)} ($${currentPrice.toFixed(2)})`
       };
     }
-    return { action: 'hold', tranche: null, reason: `Piramit L3 bekleniyor — hedef $${trigger.toFixed(2)}` };
+    return { action: 'hold', tranche: null, reason: `Pyramid L3 waiting — target $${trigger.toFixed(2)}` };
   }
 
   // Level 3: fully pyramided, no more entries
-  return { action: 'hold', tranche: null, reason: 'Tam piramit — L3 tamamlandı' };
+  return { action: 'hold', tranche: null, reason: 'Full pyramid — L3 complete' };
 }
 
 /**
@@ -69,19 +69,19 @@ function decideMomentum({ pyramidLevel, currentPrice, entryPrice, level2Price, a
  * @param {string} params.currentMarketState
  * @param {string|null} params.prevMarketState
  * @param {number} [params.minHoldMinutes=60] - minimum hold time before trend-break exit fires
- * @returns {{ exit: boolean, portion?: number, reason?: string }}
+ * @returns {{ exit: boolean, type?: 'hard'|'soft', portion?: number, reason?: string }}
  */
 function checkExitTrigger({ pos, currentPrice, assetRegime, currentMarketState, prevMarketState, minHoldMinutes = 60 }) {
   // PANIC: hard exit — no AI gate, immediate full close
   if (currentMarketState === 'PANIC') {
-    return { exit: true, type: 'hard', portion: 1, reason: 'Market state: PANIC → tüm pozisyon kapatıldı' };
+    return { exit: true, type: 'hard', portion: 1, reason: 'Market state: PANIC → full position closed' };
   }
 
   // Trigger 1: ATR trailing stop — hard exit, fires regardless of profit/loss, no AI gate
   if (pos.stop_price && currentPrice < pos.stop_price) {
     return {
       exit: true, type: 'hard', portion: 1,
-      reason: `ATR stop tetiklendi ($${pos.stop_price.toFixed(2)})`,
+      reason: `ATR stop triggered ($${pos.stop_price.toFixed(2)})`,
     };
   }
 
@@ -92,15 +92,15 @@ function checkExitTrigger({ pos, currentPrice, assetRegime, currentMarketState, 
 
     if (holdMs < minHoldMs) {
       const heldMin = Math.round(holdMs / 60000);
-      return { exit: false, _skipped: `Trend kırıldı ama min hold ${minHoldMinutes}dk (${heldMin}dk tutuldu)` };
+      return { exit: false, _skipped: `Trend broke but min hold ${minHoldMinutes}min (held ${heldMin}min)` };
     }
 
-    return { exit: true, type: 'soft', portion: 1, reason: 'Trend kırıldı (EMA50 < EMA200)' };
+    return { exit: true, type: 'soft', portion: 1, reason: 'Trend broken (EMA50 < EMA200)' };
   }
 
   // Trigger 3: Market deterioration (RISK_OFF transition) — soft exit, AI gate may apply
   if (prevMarketState !== 'RISK_OFF' && currentMarketState === 'RISK_OFF') {
-    return { exit: true, type: 'soft', portion: 1, reason: 'Market state: RISK_OFF → pozisyon kapatıldı' };
+    return { exit: true, type: 'soft', portion: 1, reason: 'Market state: RISK_OFF → position closed' };
   }
 
   return { exit: false };

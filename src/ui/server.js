@@ -65,7 +65,7 @@ app.use(session({
 // Auth middleware — protects API routes and redirects browser requests to /login.html
 function requireAuth(req, res, next) {
   if (req.session.authenticated) return next();
-  if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Oturum açılmamış' });
+  if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Not authenticated' });
   return res.redirect('/login.html');
 }
 
@@ -79,7 +79,7 @@ app.post('/login', (req, res) => {
     req.session.authenticated = true;
     return res.json({ ok: true });
   }
-  res.status(401).json({ error: 'Hatalı şifre' });
+  res.status(401).json({ error: 'Wrong password' });
 });
 app.post('/logout', (req, res) => {
   req.session.destroy(() => res.json({ ok: true }));
@@ -121,11 +121,11 @@ app.post('/api/bot/stop', (req, res) => {
   const pidFile = path.join(process.cwd(), 'bot.pid');
   try {
     const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
-    if (!Number.isInteger(pid) || pid <= 1) throw new Error('Geçersiz PID');
+    if (!Number.isInteger(pid) || pid <= 1) throw new Error('Invalid PID');
     process.kill(pid, 'SIGTERM');
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: 'Bot durdurulamadı: ' + err.message });
+    res.status(500).json({ error: 'Failed to stop bot: ' + err.message });
   }
 });
 
@@ -193,10 +193,10 @@ app.post('/api/trade', async (req, res) => {
     } else if (action === 'sell') {
       const state = loadState();
       const pos = state.positions[symbol];
-      if (!pos) return res.status(400).json({ error: `${symbol} pozisyonu bulunamadı` });
+      if (!pos) return res.status(400).json({ error: `${symbol} position not found` });
       await client.sellPosition({ positionIds: pos.positionIds, instrumentId: pos.instrumentId });
     } else {
-      return res.status(400).json({ error: 'action: buy veya sell olmalı' });
+      return res.status(400).json({ error: 'action must be buy or sell' });
     }
     res.json({ ok: true });
   } catch (err) {
@@ -293,13 +293,13 @@ app.get('/api/phase1', (req, res) => {
 
 // POST /api/phase1/run — spawn the report script (async, fire-and-forget)
 app.post('/api/phase1/run', (req, res) => {
-  if (phase1Running) return res.status(409).json({ error: 'Rapor zaten çalışıyor, bekleyin' });
+  if (phase1Running) return res.status(409).json({ error: 'Report already running, please wait' });
   phase1Running = true;
 
   const scriptPath = path.join(process.cwd(), 'scripts', 'phase1-report.js');
   if (!fs.existsSync(scriptPath)) {
     phase1Running = false;
-    return res.status(404).json({ error: 'scripts/phase1-report.js bulunamadı' });
+    return res.status(404).json({ error: 'scripts/phase1-report.js not found' });
   }
 
   const child = spawn(process.execPath, [scriptPath], {
@@ -309,14 +309,14 @@ app.post('/api/phase1/run', (req, res) => {
   });
   child.on('close', code => {
     phase1Running = false;
-    console.log(`[Phase1] Script tamamlandı — çıkış kodu: ${code}`);
+    console.log(`[Phase1] Script completed — exit code: ${code}`);
   });
   child.on('error', err => {
     phase1Running = false;
-    console.error('[Phase1] Script hatası:', err.message);
+    console.error('[Phase1] Script error:', err.message);
   });
 
-  res.json({ ok: true, message: 'Rapor başlatıldı (~30-60s sürer). Sayfayı yenileyin.' });
+  res.json({ ok: true, message: 'Report started (~30-60s). Refresh the page.' });
 });
 
 // Start

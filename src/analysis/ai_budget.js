@@ -9,10 +9,10 @@ function canCallAI(state) {
   }
 
   if (usage.daily_calls >= usage.daily_limit) {
-    return { allowed: false, reason: 'Günlük AI limit doldu' };
+    return { allowed: false, reason: 'Daily AI limit reached' };
   }
   if (usage.monthly_cost_usd >= usage.monthly_budget_usd) {
-    return { allowed: false, reason: 'Aylık AI bütçesi doldu' };
+    return { allowed: false, reason: 'Monthly AI budget reached' };
   }
   return { allowed: true };
 }

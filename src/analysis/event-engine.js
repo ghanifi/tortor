@@ -88,11 +88,11 @@ function isEarningsBlocked(symbol, earningsDate, daysBefore = 5, daysAfter = 2) 
 
   if (daysUntil <= daysBefore && daysUntil >= -daysAfter) {
     const label = daysUntil >= 0
-      ? `${Math.ceil(daysUntil)} gün kaldı`
-      : `${Math.ceil(-daysUntil)} gün önce`;
+      ? `${Math.ceil(daysUntil)} days until`
+      : `${Math.ceil(-daysUntil)} days after`;
     return {
       blocked: true,
-      reason: `Kazanç raporu yakın: ${earningsDate.toISOString().slice(0, 10)} (${label})`,
+      reason: `Earnings near: ${earningsDate.toISOString().slice(0, 10)} (${label})`,
     };
   }
 

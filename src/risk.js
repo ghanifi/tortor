@@ -5,12 +5,12 @@ function check({ symbol, action, state, config, portfolioValue, assetValue }) {
   const strategy = config.strategy;
 
   if (riskState.trades_paused) {
-    return { approved: false, reason: 'Drawdown stop aktif — alımlar durduruldu' };
+    return { approved: false, reason: 'Drawdown stop active — buys paused' };
   }
 
   if (action === 'buy') {
     if (riskState.daily_trades_today >= (strategy.max_daily_trades || 10)) {
-      return { approved: false, reason: `Günlük işlem limiti (${strategy.max_daily_trades}) doldu` };
+      return { approved: false, reason: `Daily trade limit (${strategy.max_daily_trades}) reached` };
     }
 
     if (position.last_trade_at) {
@@ -18,14 +18,14 @@ function check({ symbol, action, state, config, portfolioValue, assetValue }) {
       const elapsed = Date.now() - new Date(position.last_trade_at).getTime();
       if (elapsed < cooldownMs) {
         const remaining = Math.ceil((cooldownMs - elapsed) / 60000);
-        return { approved: false, reason: `Cooldown aktif (${remaining}dk kaldı)` };
+        return { approved: false, reason: `Cooldown active (${remaining}min remaining)` };
       }
     }
 
     const maxExposure = (safety.max_exposure_pct || 30) / 100;
     const perAssetBudget = config.budget?.per_asset?.[symbol] || 0;
     if (assetValue + perAssetBudget > portfolioValue * maxExposure) {
-      return { approved: false, reason: `Max exposure aşılıyor (%${safety.max_exposure_pct})` };
+      return { approved: false, reason: `Max exposure exceeded (${safety.max_exposure_pct}%)` };
     }
   }
 

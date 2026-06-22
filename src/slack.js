@@ -19,11 +19,11 @@ class SlackNotifier {
   }
 
   formatCheckReport({ layer, cash, portfolioValue, assets, totalPnl, totalPnlPct, aiUsage, risk }) {
-    const time = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Istanbul' });
+    const time = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
     const assetLines = assets.map(a => {
-      let status = '⏳ bekle';
-      if (a.action === 'buy') status = '🟢 ALINDI';
-      else if (a.action === 'sell') status = '🔴 SATILDI';
+      let status = '⏳ hold';
+      if (a.action === 'buy') status = '🟢 BOUGHT';
+      else if (a.action === 'sell') status = '🔴 SOLD';
       else if (a.action === 'edge') status = '🔍 edge zone';
       else if (a.blocked) status = `🚫 ${a.blockedReason}`;
       const reasonSuffix = a.reason ? `  ← ${a.reason}` : '';
@@ -36,56 +36,56 @@ class SlackNotifier {
     const pnlPctSign = totalPnlPct >= 0 ? '+' : '';
 
     return [
-      `🤖 eToro Bot — ${time} Kontrol`,
+      `🤖 eToro Bot — ${time} Cycle`,
       ``,
-      `📡 Bağlantı: ${LAYER_NAMES[layer] || layer || 'Bilinmiyor'}`,
-      `🌍 Regime: Makro=${risk.macroEquity}/${risk.macroCrypto}`,
-      `💰 Nakit: $${cash.toFixed(2)} | Portföy: $${portfolioValue.toFixed(2)}`,
-      `🤖 AI: ${aiUsage.dailyCalls}/${aiUsage.dailyLimit} günlük | $${aiUsage.monthlyCost.toFixed(2)}/$${aiUsage.monthlyBudget.toFixed(2)} aylık`,
-      `⚠️ Risk: ${risk.paused ? 'DURDURULDU' : 'Normal'} | Günlük işlem: ${risk.dailyTrades}/${risk.maxDailyTrades}`,
+      `📡 Connection: ${LAYER_NAMES[layer] || layer || 'Unknown'}`,
+      `🌍 Regime: Macro=${risk.macroEquity}/${risk.macroCrypto}`,
+      `💰 Cash: $${cash.toFixed(2)} | Portfolio: $${portfolioValue.toFixed(2)}`,
+      `🤖 AI: ${aiUsage.dailyCalls}/${aiUsage.dailyLimit} daily | $${aiUsage.monthlyCost.toFixed(2)}/$${aiUsage.monthlyBudget.toFixed(2)} monthly`,
+      `⚠️ Risk: ${risk.paused ? 'PAUSED' : 'Normal'} | Daily trades: ${risk.dailyTrades}/${risk.maxDailyTrades}`,
       ``,
       `📊 Snapshot:`,
-      assetLines || '  (portföy boş)',
+      assetLines || '  (portfolio empty)',
       ``,
-      `📈 Toplam P&L: ${pnlSign}$${Math.abs(totalPnl).toFixed(2)} (${pnlPctSign}${totalPnlPct.toFixed(1)}%)`
+      `📈 Total P&L: ${pnlSign}$${Math.abs(totalPnl).toFixed(2)} (${pnlPctSign}${totalPnlPct.toFixed(1)}%)`
     ].join('\n');
   }
 
   formatTrade({ action, symbol, price, amount, newAvg, cashRemaining, reason, pnl, tranche }) {
     if (action === 'buy') {
       return [
-        `🟢 ALIM — ${symbol} (DCA)`,
-        `   Fiyat: $${price} | $${amount.toFixed(2)} harcandı`,
-        newAvg ? `   Yeni avg: $${newAvg.toFixed(2)} | Kalan nakit: $${cashRemaining.toFixed(2)}` : '',
-        reason ? `   Neden: "${reason}"` : ''
+        `🟢 BUY — ${symbol} (DCA)`,
+        `   Price: $${price} | $${amount.toFixed(2)} spent`,
+        newAvg ? `   New avg: $${newAvg.toFixed(2)} | Remaining cash: $${cashRemaining.toFixed(2)}` : '',
+        reason ? `   Reason: "${reason}"` : ''
       ].filter(Boolean).join('\n');
     }
     const pnlSign = pnl >= 0 ? '+' : '';
     return [
-      `🔴 SATIM — ${symbol} (Tranche ${tranche})`,
-      `   Fiyat: $${price} | Kâr: ${pnlSign}$${Math.abs(pnl).toFixed(2)}`,
-      `   Kalan nakit: $${cashRemaining.toFixed(2)}`,
-      reason ? `   Neden: "${reason}"` : ''
+      `🔴 SELL — ${symbol} (Tranche ${tranche})`,
+      `   Price: $${price} | P&L: ${pnlSign}$${Math.abs(pnl).toFixed(2)}`,
+      `   Remaining cash: $${cashRemaining.toFixed(2)}`,
+      reason ? `   Reason: "${reason}"` : ''
     ].filter(Boolean).join('\n');
   }
 
   formatBlock({ symbol, reason, price }) {
-    return `🚫 BLOKE — ${symbol} alımı engellendi\n   Neden: ${reason}\n   Fiyat: $${price}`;
+    return `🚫 BLOCKED — ${symbol} buy blocked\n   Reason: ${reason}\n   Price: $${price}`;
   }
 
   formatError({ message, lastSuccess, retryIn = 10, attempt = 1 }) {
-    const attemptStr = attempt > 1 ? ` (${attempt}. deneme)` : '';
+    const attemptStr = attempt > 1 ? ` (attempt ${attempt})` : '';
     return [
-      `🚨 HATA — eToro API erişilemiyor${attemptStr}`,
+      `🚨 ERROR — eToro API unreachable${attemptStr}`,
       `   ${message}`,
-      `   Son başarılı: ${lastSuccess || 'bilinmiyor'}`,
-      `   ${retryIn} dk sonra tekrar denenecek`
+      `   Last success: ${lastSuccess || 'unknown'}`,
+      `   Retry in ${retryIn} min`
     ].join('\n');
   }
 
   formatAiBudgetWarning({ monthlyUsed, monthlyBudget }) {
     const pct = ((monthlyUsed / monthlyBudget) * 100).toFixed(0);
-    return `⚠️ AI BÜTÇE — %${pct} doldu ($${monthlyUsed.toFixed(2)}/$${monthlyBudget.toFixed(2)})\n   AI analiz devre dışı → sadece teknik indikatörler aktif`;
+    return `⚠️ AI BUDGET — ${pct}% used ($${monthlyUsed.toFixed(2)}/$${monthlyBudget.toFixed(2)})\n   AI analysis disabled → technical indicators only`;
   }
 }
 

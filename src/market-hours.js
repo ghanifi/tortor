@@ -36,19 +36,19 @@ function isMarketOpen(symbol, now = new Date()) {
   const { weekday, hour, minute } = getTimeInZone(tz, now);
 
   if (weekday === 'Sat' || weekday === 'Sun') {
-    return { open: false, exchange, reason: 'hafta sonu' };
+    return { open: false, exchange, reason: 'weekend' };
   }
 
   const mins = hour * 60 + minute;
 
   if (exchange === 'LSE') {
     const open = mins >= 8 * 60 && mins < 16 * 60 + 30;
-    return { open, exchange, reason: open ? null : 'LSE kapalı (08:00–16:30 GMT/BST)' };
+    return { open, exchange, reason: open ? null : 'LSE closed (08:00–16:30 GMT/BST)' };
   }
 
   // NYSE / NASDAQ
   const open = mins >= 9 * 60 + 30 && mins < 16 * 60;
-  return { open, exchange, reason: open ? null : 'NYSE kapalı (09:30–16:00 ET)' };
+  return { open, exchange, reason: open ? null : 'NYSE closed (09:30–16:00 ET)' };
 }
 
 module.exports = { isMarketOpen, getExchange, getTimeInZone };

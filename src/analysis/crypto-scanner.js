@@ -43,7 +43,7 @@ async function fetchAllCryptoHistories() {
     try {
       results[etoro] = await fetchCryptoHistory1H(yahoo);
     } catch (err) {
-      console.warn(`[CryptoScanner] ${etoro} verisi alınamadı: ${err.message}`);
+      console.warn(`[CryptoScanner] ${etoro} data unavailable: ${err.message}`);
     }
   }));
   return results;
@@ -111,7 +111,7 @@ function scoreCoin(hist, btcHist) {
   const n   = closes.length;
   const btcN = btcHist.closes.length;
 
-  // ── RS Gücü (max 30): 7-day return / BTC 7-day return ──────────────────────
+  // ── RS Strength (max 30): 7-day return / BTC 7-day return ─────────────────
   const bars7d = 7 * 24;
   let rsPts = 0;
   let rs7d  = null;
@@ -122,16 +122,16 @@ function scoreCoin(hist, btcHist) {
     rsPts = Math.round(clamp(rs7d, 0, 5) / 5 * 30);
   }
 
-  // ── Hacim Patlaması (max 25) ────────────────────────────────────────────────
+  // ── Volume Surge (max 25) ───────────────────────────────────────────────────
   const surgeRatio = calcVolumeSurge(volumes) ?? 1.5;
   // Score floor is 1.5× — coins below this are filtered out before scoring; no config coupling needed
   const volumePts  = Math.round((clamp(surgeRatio, 1.5, 5) - 1.5) / (5 - 1.5) * 25);
 
-  // ── Trend Gücü / ADX (max 20) ──────────────────────────────────────────────
+  // ── Trend Strength / ADX (max 20) ──────────────────────────────────────────
   const adx    = calculateADX(highs, lows, closes, 14) ?? 20;
   const adxPts = Math.round((clamp(adx, 20, 50) - 20) / (50 - 20) * 20);
 
-  // ── BTC'ye Karşı Güç (max 15): 14-day RS vs BTC ────────────────────────────
+  // ── Strength vs BTC (max 15): 14-day RS vs BTC ─────────────────────────────
   const bars14d = 14 * 24;
   let btcStrengthPts = 0;
   if (n >= bars14d + 1 && btcN >= bars14d + 1) {
@@ -141,7 +141,7 @@ function scoreCoin(hist, btcHist) {
     btcStrengthPts = Math.round(clamp(rs14d, 0, 5) / 5 * 15);
   }
 
-  // ── RSI Yapısı (max 10) ────────────────────────────────────────────────────
+  // ── RSI Structure (max 10) ─────────────────────────────────────────────────
   const rsi = calculateRSI(closes, 14);
   let rsiPts = 0;
   if (rsi !== null) {
@@ -188,7 +188,7 @@ async function runCryptoScan(cryptoConfig = {}, botState = null, saveStateFn = n
 
   // BTC data is required for RS scoring regardless of gate setting
   if (!btcHist) {
-    console.warn('[CryptoScanner] BTC verisi yok — RS skoru hesaplanamaz, scan atlandı');
+    console.warn('[CryptoScanner] BTC data unavailable — RS score cannot be calculated, scan skipped');
     return [];
   }
 
@@ -202,7 +202,7 @@ async function runCryptoScan(cryptoConfig = {}, botState = null, saveStateFn = n
       console.log(`[CryptoScanner] BTC gate ${prevGateOpen ? 'OPEN→CLOSED' : 'CLOSED→OPEN'} (EMA${btc_ema_period} histerezis)`);
     }
     if (!gateOpen) {
-      console.log(`[CryptoScanner] BTC EMA${btc_ema_period} gate kapalı — bear market, yeni alım yok`);
+      console.log(`[CryptoScanner] BTC EMA${btc_ema_period} gate closed — bear market, no new buys`);
       return [];
     }
   }
@@ -225,13 +225,13 @@ async function runCryptoScan(cryptoConfig = {}, botState = null, saveStateFn = n
     candidates.push({ symbol: etoro, ...result });
   }
 
-  console.log(`[CryptoScanner] Eleme: veri yok=${diagNoData} trend=${diagTrend} hacim=${diagVolume} skor=${diagScore}`);
+  console.log(`[CryptoScanner] Filtered: no_data=${diagNoData} trend=${diagTrend} volume=${diagVolume} score=${diagScore}`);
 
   candidates.sort((a, b) => b.score - a.score);
   const topN = candidates.slice(0, top_n);
 
   console.log(
-    `[CryptoScanner] ${ETORO_CRYPTO.length} coin tarandı → ${candidates.length} aday → ` +
+    `[CryptoScanner] ${ETORO_CRYPTO.length} coins scanned → ${candidates.length} candidates → ` +
     `top ${topN.length}: ${topN.map(c => `${c.symbol}(${c.score})`).join(', ') || '—'}`
   );
 

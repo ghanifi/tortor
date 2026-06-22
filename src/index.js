@@ -135,14 +135,14 @@ async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, sta
     const spendable = Math.max(0, (state.cash || 0) - minReserve);
     const fixedBudget = Math.min(config.crypto_scanner.budget_per_trade, spendable);
     if (fixedBudget > budget) {
-      console.log(`[Trade] ${symbol}: ATR bütçe $${budget.toFixed(2)} → crypto fixed $${fixedBudget.toFixed(2)}`);
+      console.log(`[Trade] ${symbol}: ATR budget $${budget.toFixed(2)} → crypto fixed $${fixedBudget.toFixed(2)}`);
       budget = fixedBudget;
     }
   }
 
   if (budget <= 0) {
-    console.log(`[Trade] [ERROR] BUY ${symbol} L${tranche} BAŞARISIZ — bütçe=0 (nakit=$${(state.cash||0).toFixed(2)}, rezerv=$${minReserve}, ATR=${atr?.toFixed(2) ?? 'N/A'})`);
-    return { state, success: false, failReason: `Bütçe yetersiz (nakit=$${(state.cash||0).toFixed(2)}, rezerv=$${minReserve}, ATR=${atr?.toFixed(2) ?? 'N/A'})` };
+    console.log(`[Trade] [ERROR] BUY ${symbol} L${tranche} FAILED — budget=0 (cash=$${(state.cash||0).toFixed(2)}, reserve=$${minReserve}, ATR=${atr?.toFixed(2) ?? 'N/A'})`);
+    return { state, success: false, failReason: `Insufficient budget (cash=$${(state.cash||0).toFixed(2)}, reserve=$${minReserve}, ATR=${atr?.toFixed(2) ?? 'N/A'})` };
   }
 
   const qty = budget / currentPrice;
@@ -155,9 +155,9 @@ async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, sta
     const newAvg = calcNewAvgCost(pos.quantity || 0, pos.avg_cost || currentPrice, qty, currentPrice);
 
     if (isDCA) {
-      // DCA alım: mevcut pozisyona ek alım — piramit seviyesini değiştirme,
-      // sadece miktar, ortalama maliyet ve dca_count güncelle.
-      // Stop da yeni düşük ortalama maliyete göre güncellenir.
+      // DCA buy: add to existing position — don't change pyramid level,
+      // only update quantity, avg cost and dca_count.
+      // Stop is also updated to the new lower avg cost.
       const newStop = atr ? newAvg - atrMult * atr : (pos.stop_price ?? null);
       state.positions[symbol] = {
         ...pos,
@@ -165,7 +165,7 @@ async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, sta
         avg_cost:  newAvg,
         dca_count: (pos.dca_count || 0) + 1,
         stop_price: newStop,
-        profit_take_1_done: false,  // fiyat düştü → yeni avg_cost → PT resetle
+        profit_take_1_done: false,  // price dropped → new avg_cost → reset PT
         profit_take_2_done: false,
       };
     } else if (tranche === 1) {
@@ -226,8 +226,8 @@ async function executeBuy({ symbol, pos, tranche, reason, currentPrice, atr, sta
     console.log(`[Trade] BUY ${symbol} L${tranche} $${budget.toFixed(2)} @ $${currentPrice.toFixed(2)}${config.safety?.dry_run ? ' [DRY RUN]' : ''}`);
     return { state, success: true, failReason: null };
   } catch (err) {
-    console.log(`[Trade] [ERROR] BUY ${symbol} L${tranche} BAŞARISIZ — ${err.message}`);
-    return { state, success: false, failReason: `eToro API hatası: ${err.message}` };
+    console.log(`[Trade] [ERROR] BUY ${symbol} L${tranche} FAILED — ${err.message}`);
+    return { state, success: false, failReason: `eToro API error: ${err.message}` };
   }
 }
 
@@ -280,7 +280,7 @@ async function runCycle() {
         score: breadth.score, count: breadth.count, total: breadth.total,
         state: breadth.state, last_fetch: breadth.last_fetch,
       };
-      console.log(`[Breadth] ${breadthState}: ${breadthCount}/${breadth.total ?? 11} sektör MA50 üzerinde`);
+      console.log(`[Breadth] ${breadthState}: ${breadthCount}/${breadth.total ?? 11} sectors above MA50`);
     } catch (err) {
       console.warn('[Breadth] Fetch failed, skipping breadth filter:', err.message);
     }
@@ -302,11 +302,11 @@ async function runCycle() {
         const pos = state.positions[sym];
         const price = prices[sym] || pos.avg_cost || 0;
         if (price > 0) {
-          state = await executeSell({ symbol: sym, pos, portion: 1, reason: 'Market state: PANIC — acil çıkış', currentPrice: price, state, marketState: 'PANIC' });
+          state = await executeSell({ symbol: sym, pos, portion: 1, reason: 'Market state: PANIC — emergency exit', currentPrice: price, state, marketState: 'PANIC' });
         } else {
-          console.error(`[PANIC] ${sym} satılamadı — fiyat verisi yok, manuel müdahale gerekli`);
+          console.error(`[PANIC] ${sym} could not be sold — no price data, manual action required`);
           try {
-            await slack.send(`⚠️ PANIC: ${sym} otomatik çıkış BAŞARISIZ — fiyat verisi yok, manuel işlem gerekli`);
+            await slack.send(`⚠️ PANIC: ${sym} auto-exit FAILED — no price data, manual trade required`);
           } catch (slackErr) {
             console.error('[PANIC] Slack alert failed:', slackErr.message);
           }
@@ -336,7 +336,7 @@ async function runCycle() {
           attempt: consecutiveErrors,
         }));
       }
-      console.error(`[Bot] eToro API hatası (${consecutiveErrors}. deneme):`, err.message);
+      console.error(`[Bot] eToro API error (attempt ${consecutiveErrors}):`, err.message);
       saveState(state);
       isRunning = false;
       return;
@@ -360,7 +360,7 @@ async function runCycle() {
       // check if we already know the real symbol for this instrumentId
       if (/^\d+$/.test(sym) && p.instrumentId && idToSymbol[p.instrumentId]) {
         const realSym = idToSymbol[p.instrumentId];
-        console.log(`[Portfolio] ${sym} → ${realSym} (instrumentId ${p.instrumentId} eşleşti)`);
+        console.log(`[Portfolio] ${sym} → ${realSym} (instrumentId ${p.instrumentId} matched)`);
         // Merge numeric-keyed entry into the real symbol entry and delete the stale key
         if (state.positions[sym]) {
           const numericEntry = state.positions[sym];
@@ -385,7 +385,7 @@ async function runCycle() {
         const existingStop = state.positions[sym].stop_price;
         if (existingStop != null && p.avgCost > existingStop * 1.5) {
           state.positions[sym].stop_price = null;
-          console.log(`[Portfolio] ${sym}: stop_price $${existingStop.toFixed(4)} sıfırlandı — avg_cost $${p.avgCost.toFixed(4)} çok daha yüksek, yeniden hesaplanacak`);
+          console.log(`[Portfolio] ${sym}: stop_price $${existingStop.toFixed(4)} reset — avg_cost $${p.avgCost.toFixed(4)} much higher, will recalculate`);
         }
       }
       // Ensure entry_at is always set — min_hold protection fails silently if null
@@ -404,7 +404,7 @@ async function runCycle() {
       if (/^\d+$/.test(k)) {
         const instrId = state.positions[k]?.instrumentId;
         if (instrId && idToSymbol[instrId]) {
-          console.log(`[Portfolio] Orphan key "${k}" silindi (${idToSymbol[instrId]} ile duplike)`);
+          console.log(`[Portfolio] Orphan key "${k}" removed (duplicate of ${idToSymbol[instrId]})`);
           delete state.positions[k];
         }
       }
@@ -421,10 +421,10 @@ async function runCycle() {
         const scanResults = await runCryptoScan(config.crypto_scanner || {}, state, saveState);
         for (const c of scanResults) cryptoCandidates[c.symbol] = c;
         if (scanResults.length === 0) {
-          console.log(`[CryptoScanner] Aday bulunamadı — BTC EMA gate, trend veya skor filtresi (BTC=$${cash > 0 ? 'veri bekleniyor' : 'bilinmiyor'})`);
+          console.log(`[CryptoScanner] No candidates — BTC EMA gate, trend or score filter`);
         }
       } catch (err) {
-        console.warn('[CryptoScanner] Scan hatası, atlanıyor:', err.message);
+        console.warn('[CryptoScanner] Scan error, skipping:', err.message);
       }
     }
 
@@ -434,7 +434,7 @@ async function runCycle() {
       ...Object.keys(cryptoCandidates),
     ])];
 
-    // Faz 1: spread log (her cycle; hata olursa sessizce geç, strateji etkilenmez)
+    // Phase 1: spread log (every cycle; errors are silent, strategy unaffected)
     logSpreads(allSymbols).catch(() => {});
 
     // Fetch missing prices from Yahoo
@@ -537,7 +537,7 @@ async function runCycle() {
           const initStop = basePrice - atrMult * atr;
           state.positions[symbol].stop_price = initStop;
           pos = state.positions[symbol];
-          console.log(`[Stop] ${symbol}: stop_price başlatıldı $${initStop.toFixed(2)} (avg $${basePrice.toFixed(2)} - ${atrMult}×ATR $${atr.toFixed(2)})`);
+          console.log(`[Stop] ${symbol}: stop_price initialized $${initStop.toFixed(2)} (avg $${basePrice.toFixed(2)} - ${atrMult}×ATR $${atr.toFixed(2)})`);
         }
 
         // Trail stop upward — never let gains erode back to the original stop level
@@ -558,9 +558,9 @@ async function runCycle() {
           }
         }
 
-        // ── Crypto parça parça satış (profit taking) ────────────────────────────
-        // Scanner pozisyonları için: hedef kâr seviyelerine ulaşınca %33'er sat.
-        // ATR stop'tan önce kontrol edilir — kâr realizasyonu için fırsat verir.
+        // ── Crypto partial profit taking ─────────────────────────────────────────
+        // For scanner positions: sell 33% each time a profit target is hit.
+        // Checked before ATR stop — gives the trade a chance to realise gains.
         if (pos.source === 'crypto_scanner' && pos.avg_cost && currentPrice > pos.avg_cost) {
           const profitPct = ((currentPrice - pos.avg_cost) / pos.avg_cost) * 100;
           const pt1 = config.crypto_scanner?.profit_take_pct_1 ?? 10;
@@ -569,10 +569,10 @@ async function runCycle() {
           if (!pos.profit_take_2_done && profitPct >= pt2) {
             state.positions[symbol].profit_take_2_done = true;
             state.positions[symbol].profit_take_1_done = true;
-            ptReason = `Kısmi kar PT2: +${profitPct.toFixed(1)}% ≥ +${pt2}%`;
+            ptReason = `Partial take PT2: +${profitPct.toFixed(1)}% ≥ +${pt2}%`;
           } else if (!pos.profit_take_1_done && profitPct >= pt1) {
             state.positions[symbol].profit_take_1_done = true;
-            ptReason = `Kısmi kar PT1: +${profitPct.toFixed(1)}% ≥ +${pt1}%`;
+            ptReason = `Partial take PT1: +${profitPct.toFixed(1)}% ≥ +${pt1}%`;
           }
           if (ptReason) {
             pos = state.positions[symbol];
@@ -595,8 +595,8 @@ async function runCycle() {
         } else if (exitResult.exit) {
           const market = isMarketOpen(symbol);
           if (!market.open && market.exchange !== 'CRYPTO') {
-            assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: `Piyasa kapalı (çıkış ertelendi) — ${exitResult.reason}` });
-            logDecision({ ...decisionData, decision: 'hold', failReason: `Piyasa kapalı — ${exitResult.reason}` });
+            assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: `Market closed (exit deferred) — ${exitResult.reason}` });
+            logDecision({ ...decisionData, decision: 'hold', failReason: `Market closed — ${exitResult.reason}` });
             continue;
           }
 
@@ -662,7 +662,7 @@ async function runCycle() {
         const rej = state.rejection_counts?.[symbol];
         if (rej && rej.count >= 3 && (Date.now() - new Date(rej.since).getTime()) < cooldownMs) {
           const minsLeft = Math.ceil((cooldownMs - (Date.now() - new Date(rej.since).getTime())) / 60000);
-          const reason = `Soğuma süresi: ${minsLeft}dk kaldı (${rej.count}× '${rej.reason}' reddedildi)`;
+          const reason = `Cooldown: ${minsLeft}min remaining (rejected ${rej.count}× for '${rej.reason}')`;
           assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason });
           logDecision({ ...decisionData, filters: {}, decision: 'hold', failReason: reason });
           continue;
@@ -687,7 +687,7 @@ async function runCycle() {
       const isCryptoCandidate = symbol in cryptoCandidates;
       if (!isCryptoCandidate && currentMarketState !== minState) {
         allFiltersPass = false;
-        failReason = `Market state: ${currentMarketState} (${minState} gerekli)`;
+        failReason = `Market state: ${currentMarketState} (${minState} required)`;
         filterLog.market_state = 'FAIL';
       } else {
         filterLog.market_state = isCryptoCandidate ? 'SCANNER_BYPASS' : 'PASS';
@@ -707,13 +707,13 @@ async function runCycle() {
           filterLog.earnings = 'SKIP';
         } else if (assetRegime.trend === 'BEAR') {
           allFiltersPass = false;
-          failReason = `Trend filtresi: BEAR (BULL veya SIDEWAYS gerekli)`;
+          failReason = `Trend filter: BEAR (BULL or SIDEWAYS required)`;
           filterLog.trend = 'FAIL';
         } else {
           filterLog.trend = 'PASS';
           if (!assetRegime.adx || assetRegime.adx <= adxThreshold) {
             allFiltersPass = false;
-            failReason = `ADX filtresi: ${assetRegime.adx?.toFixed(1) || 'null'} ≤ ${adxThreshold} (trend gücü yetersiz)`;
+            failReason = `ADX filter: ${assetRegime.adx?.toFixed(1) || 'null'} ≤ ${adxThreshold} (trend strength insufficient)`;
             filterLog.adx = 'FAIL';
           } else {
             filterLog.adx = 'PASS';
@@ -753,24 +753,24 @@ async function runCycle() {
                       // allFiltersPass remains true → falls through to earnings check below
                     } else {
                       allFiltersPass = false;
-                      failReason = `Final skor: ${finalScore} < ${entryScore} | AI: ${audit.reason}`;
+                      failReason = `Final score: ${finalScore} < ${entryScore} | AI: ${audit.reason}`;
                       filterLog.final_score = 'FAIL';
                       filterLog.ai_audit    = 'FAIL';
                     }
                   } catch (err) {
-                    console.warn(`[AI Override] ${symbol} hata:`, err.message);
+                    console.warn(`[AI Override] ${symbol} error:`, err.message);
                     allFiltersPass = false;
-                    failReason = `Final skor: ${finalScore} < ${entryScore} (RS:${rsScore?.toFixed(0) ?? '?'} Tek:${techScore} Mkt:${marketScore} Breadth:${breadthCount}/11)`;
+                    failReason = `Final score: ${finalScore} < ${entryScore} (RS:${rsScore?.toFixed(0) ?? '?'} Tech:${techScore} Mkt:${marketScore} Breadth:${breadthCount}/11)`;
                     filterLog.final_score = 'FAIL';
                   }
                 } else {
                   allFiltersPass = false;
-                  failReason = `Final skor: ${finalScore} < ${entryScore} (AI bütçe aşıldı: ${aiCheck.reason})`;
+                  failReason = `Final score: ${finalScore} < ${entryScore} (AI budget exceeded: ${aiCheck.reason})`;
                   filterLog.final_score = 'FAIL';
                 }
               } else {
                 allFiltersPass = false;
-                failReason = `Final skor: ${finalScore} < ${entryScore} (RS:${rsScore?.toFixed(0) ?? '?'} Tek:${techScore} Mkt:${marketScore} Breadth:${breadthCount}/11)`;
+                failReason = `Final score: ${finalScore} < ${entryScore} (RS:${rsScore?.toFixed(0) ?? '?'} Tech:${techScore} Mkt:${marketScore} Breadth:${breadthCount}/11)`;
                 filterLog.final_score = 'FAIL';
               }
             } else {
@@ -816,16 +816,16 @@ async function runCycle() {
         // Clear rejection count so symbol starts fresh after being bought
         if (state.rejection_counts?.[symbol]) delete state.rejection_counts[symbol];
       } else {
-        // ── Crypto DCA: geçmiş fiyata göre alım (parça parça alış) ───────────
-        // Scanner pozisyonu var ve fiyat avg_cost'un dca_dip_pct% altına düştüyse
-        // pyramid mantığı yerine DCA alım sinyali üret.
+        // ── Crypto DCA: buy into price dips ────────────────────────────────────
+        // If a scanner position exists and price drops dca_dip_pct% below avg cost,
+        // generate a DCA buy signal instead of pyramid logic.
         let dcaQueued = false;
         if (pos.source === 'crypto_scanner' && pos.avg_cost && (pos.quantity || 0) > 0) {
           const dcaDipPct    = config.crypto_scanner?.dca_dip_pct    ?? 5;
           const maxDcaCount  = config.crypto_scanner?.max_dca_count  ?? 3;
           const dcaCount     = pos.dca_count || 0;
           if (currentPrice <= pos.avg_cost * (1 - dcaDipPct / 100) && dcaCount < maxDcaCount) {
-            const dcaReason = `DCA alım: $${currentPrice.toFixed(4)} ≤ ort. maliyet $${pos.avg_cost.toFixed(4)} −${dcaDipPct}% (${dcaCount + 1}/${maxDcaCount})`;
+            const dcaReason = `DCA buy: $${currentPrice.toFixed(4)} ≤ avg cost $${pos.avg_cost.toFixed(4)} −${dcaDipPct}% (${dcaCount + 1}/${maxDcaCount})`;
             buyCandidates.push({
               symbol, pos, currentPrice, changePct, assetRegime,
               decision: { action: 'buy', tranche: 1, reason: dcaReason },
@@ -863,9 +863,9 @@ async function runCycle() {
     buyCandidates.sort((a, b) => b.rsScore - a.rsScore);
     const cryptoBuyCandidates = buyCandidates.filter(c => c.symbol in cryptoCandidates);
     if (cryptoBuyCandidates.length) {
-      console.log(`[CryptoPass2] ${cryptoBuyCandidates.length} aday işleniyor: ${cryptoBuyCandidates.map(c => `${c.symbol}(${c.rsScore})`).join(', ')}`);
+      console.log(`[CryptoPass2] ${cryptoBuyCandidates.length} candidates processing: ${cryptoBuyCandidates.map(c => `${c.symbol}(${c.rsScore})`).join(', ')}`);
     } else if (Object.keys(cryptoCandidates).length) {
-      console.log(`[CryptoPass2] Scanner ${Object.keys(cryptoCandidates).length} aday buldu ama hiçbiri Pass2'ye ulaşmadı`);
+      console.log(`[CryptoPass2] Scanner found ${Object.keys(cryptoCandidates).length} candidates but none reached Pass2`);
     }
 
     const corrMax = config.strategy?.correlation_max ?? 0.85;
@@ -875,7 +875,7 @@ async function runCycle() {
       if (decision.tranche === 1 && !isDCA) {
         const corrResult = checkCorrelation(historyMap[symbol]?.closes || [], state.positions, historyMap, corrMax);
         if (corrResult.blocked) {
-          const reason = `Korelasyon filtresi: ${corrResult.with} ile r=${corrResult.correlation.toFixed(2)}`;
+          const reason = `Correlation filter: r=${corrResult.correlation.toFixed(2)} with ${corrResult.with}`;
           assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason });
           logDecision({ ...decisionData, filters: { ...filterLog, correlation: 'FAIL' }, decision: 'hold', failReason: reason });
           continue;
@@ -894,7 +894,7 @@ async function runCycle() {
         const aiCheck = canCallAI(state);
         if (isCryptoEntry) {
           filterLog.ai_audit = isDCA ? 'DCA' : 'SCANNER';
-          console.log(`[AI Auditor] ${symbol}: ${isDCA ? 'DCA alım' : 'scanner adayı'} — AI denetimi atlandı`);
+          console.log(`[AI Auditor] ${symbol}: ${isDCA ? 'DCA buy' : 'scanner candidate'} — AI audit skipped`);
         } else if (aiMode !== 'disabled' && !aiVerdict && aiCheck.allowed) {
           try {
             const audit = await auditTrade({
@@ -916,7 +916,7 @@ async function runCycle() {
             aiReason  = audit.reason;
             decisionData.aiPrompt = audit.prompt;
             if (audit.verdict === 'SKIP') {
-              const reason = `AI Denetçi: ${audit.reason}`;
+              const reason = `AI Auditor: ${audit.reason}`;
               assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason });
               logDecision({ ...decisionData, filters: { ...filterLog, ai_audit: 'FAIL' }, decision: 'hold', failReason: reason, aiVerdict, aiReason });
               continue;
@@ -924,17 +924,17 @@ async function runCycle() {
             filterLog.ai_audit = 'PASS';
             console.log(`[AI Auditor] ${symbol}: BUY — ${audit.reason}`);
           } catch (err) {
-            console.warn(`[AI Auditor] ${symbol} denetim başarısız, devam ediliyor:`, err.message);
+            console.warn(`[AI Auditor] ${symbol} audit failed, proceeding:`, err.message);
             filterLog.ai_audit = 'SKIP';
           }
         } else if (aiVerdict) {
           // Already called in Pass 1 (override mode) — treat as PASS
           filterLog.ai_audit = 'PASS';
-          console.log(`[AI Auditor] ${symbol}: Pass 1'de onaylandı (${aiVerdict})`);
+          console.log(`[AI Auditor] ${symbol}: approved in Pass 1 (${aiVerdict})`);
         } else {
           filterLog.ai_audit = 'SKIP';
-          const skipReason = aiCheck.reason || (aiMode === 'disabled' ? 'AI devre dışı' : 'bilinmiyor');
-          console.log(`[AI Auditor] ${symbol}: atlandı — ${skipReason}`);
+          const skipReason = aiCheck.reason || (aiMode === 'disabled' ? 'AI disabled' : 'unknown');
+          console.log(`[AI Auditor] ${symbol}: skipped — ${skipReason}`);
         }
       } else {
         filterLog.correlation = 'SKIP';
@@ -948,7 +948,7 @@ async function runCycle() {
         const scannerOpenCount = Object.values(state.positions)
           .filter(p => p.source === 'crypto_scanner' && (p.quantity || 0) > 0).length;
         if (scannerOpenCount >= maxPositions) {
-          const reason = `Crypto scanner: max_positions (${maxPositions}) doldu`;
+          const reason = `Crypto scanner: max_positions (${maxPositions}) reached`;
           assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason });
           logDecision({ ...decisionData, filters: filterLog, decision: 'hold', failReason: reason });
           continue;
@@ -970,7 +970,7 @@ async function runCycle() {
 
       const market = isMarketOpen(symbol);
       if (!market.open && market.exchange !== 'CRYPTO') {
-        const reason = `Piyasa kapalı — ${market.reason}`;
+        const reason = `Market closed — ${market.reason}`;
         assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason });
         logDecision({ ...decisionData, filters: filterLog, decision: 'hold', failReason: reason });
         continue;
@@ -1011,7 +1011,7 @@ async function runCycle() {
         assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'buy', reason: buyReason });
         logDecision({ ...decisionData, filters: filterLog, decision: 'buy', tranche: decision.tranche, failReason: null });
       } else {
-        const execFailReason = buyResult.failReason || 'Alım başarısız';
+        const execFailReason = buyResult.failReason || 'Buy failed';
         assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason: execFailReason });
         logDecision({ ...decisionData, filters: filterLog, decision: 'hold', failReason: execFailReason });
       }
@@ -1068,7 +1068,7 @@ async function main() {
 
   const intervalMin = config.strategy?.check_interval_minutes || 10;
   console.log(`[Bot] Starting Momentum v3. Interval: ${intervalMin}min. Dry run: ${config.safety?.dry_run}`);
-  await slack.send(`🤖 eToro Bot v3 Momentum başladı — ${intervalMin}dk aralık, dry_run=${config.safety?.dry_run}`);
+  await slack.send(`🤖 eToro Bot v3 Momentum started — ${intervalMin}min interval, dry_run=${config.safety?.dry_run}`);
 
   await runCycle();
   cron.schedule(`*/${intervalMin} * * * *`, runCycle);
