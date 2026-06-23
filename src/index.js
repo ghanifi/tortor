@@ -50,11 +50,12 @@ async function executeSell({ symbol, pos, portion, reason, currentPrice, state, 
 
   try {
     if (!config.safety?.dry_run) {
-      await etoroClient.sellPosition({
-        positionIds: pos.positionIds,
-        positionId: pos.positionId,
-        instrumentId: pos.instrumentId,
-      });
+      // If instrumentId is missing in state (incomplete position record),
+      // fall back to symbol-string lookup so sellPosition resolves it live from portfolio.
+      const sellArg = pos.instrumentId
+        ? { positionIds: pos.positionIds, positionId: pos.positionId, instrumentId: pos.instrumentId }
+        : symbol;
+      await etoroClient.sellPosition(sellArg);
     }
 
     if (portion >= 1) {
