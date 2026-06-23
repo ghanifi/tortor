@@ -3,15 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>eToro Bot</title>
+  <title>THOR — Trading Intelligence</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div id="app">
     <nav id="sidebar">
       <div class="sidebar-header">
-        <div class="brand">⚡ eToro Bot</div>
-        <div id="bot-status" class="status-running">● Running</div>
+        <div class="brand">
+          <span class="brand-icon">⚡</span>
+          THOR
+        </div>
+        <div class="brand-sub">Trading Intelligence</div>
+        <div id="bot-status" class="status-running">
+          <span class="status-dot"></span>
+          Running
+        </div>
       </div>
       <ul class="nav-list">
         <li class="nav-item" data-route="dashboard"  onclick="navigate('dashboard')">📊 Dashboard</li>
@@ -24,7 +31,7 @@
       <div class="sidebar-footer">
         <div class="last-check-label">Last check</div>
         <div id="last-check-time" class="last-check-time">—</div>
-        <button class="btn-stop" onclick="stopBot()">⏹ Stop</button>
+        <button class="btn-stop" onclick="stopBot()">⏹ Stop Bot</button>
       </div>
     </nav>
     <main id="content">
