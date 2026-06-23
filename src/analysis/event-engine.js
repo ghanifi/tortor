@@ -28,23 +28,41 @@ const earningsCache = {};
 
 // ── Yahoo Finance crumb session ────────────────────────────────────────────────
 // Yahoo v10 API requires a crumb + session cookie obtained from finance.yahoo.com.
-// Session is cached for the lifetime of the process; reset on 401 and retried once.
+// finance.yahoo.com sends very large response headers (>16KB) that overflow Node's
+// default HTTP parser. We use native https.request with maxHeaderSize:65536 for
+// the cookie-fetch step, then axios for the crumb exchange.
 
 let _yahooSession = null;
+
+function fetchYahooCookiesNative() {
+  const https2 = require('https');
+  return new Promise((resolve) => {
+    const req = https2.request({
+      hostname: 'finance.yahoo.com',
+      path: '/',
+      method: 'GET',
+      maxHeaderSize: 65536,       // 64 KB — Yahoo CDN sets many large cookies
+      rejectUnauthorized: false,
+      headers: { 'User-Agent': YAHOO_UA },
+      timeout: 10000,
+    }, (res) => {
+      const cookies = (res.headers['set-cookie'] || [])
+        .map(c => c.split(';')[0])
+        .join('; ');
+      res.resume();               // drain body so socket is released
+      resolve(cookies);
+    });
+    req.on('error', () => resolve(''));
+    req.on('timeout', () => { req.destroy(); resolve(''); });
+    req.end();
+  });
+}
 
 async function getYahooSession() {
   if (_yahooSession) return _yahooSession;
 
-  // Step 1: hit Yahoo Finance to get session cookies
-  const cookieRes = await axios.get('https://finance.yahoo.com', {
-    headers: { 'User-Agent': YAHOO_UA },
-    httpsAgent,
-    timeout: 10000,
-    maxRedirects: 5,
-  });
-  const cookies = (cookieRes.headers['set-cookie'] || [])
-    .map(c => c.split(';')[0])
-    .join('; ');
+  // Step 1: collect session cookies (large headers — native request bypasses axios limit)
+  const cookies = await fetchYahooCookiesNative();
 
   // Step 2: exchange cookies for a crumb token
   const crumbRes = await axios.get('https://query2.finance.yahoo.com/v1/test/getcrumb', {
