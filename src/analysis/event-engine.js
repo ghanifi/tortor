@@ -13,6 +13,8 @@ const https = require('https');
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
+const YAHOO_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
 // All eToro crypto tickers — earnings check skipped for all of them
 const CRYPTO_SYMBOLS = new Set([
   'BTC','ETH','XRP','ADA','SOL','DOT','BNB','AVAX','DOGE','LTC','LINK','UNI',
@@ -24,12 +26,41 @@ const CRYPTO_SYMBOLS = new Set([
 
 const earningsCache = {};
 
+// ── Yahoo Finance crumb session ────────────────────────────────────────────────
+// Yahoo v10 API requires a crumb + session cookie obtained from finance.yahoo.com.
+// Session is cached for the lifetime of the process; reset on 401 and retried once.
+
+let _yahooSession = null;
+
+async function getYahooSession() {
+  if (_yahooSession) return _yahooSession;
+
+  // Step 1: hit Yahoo Finance to get session cookies
+  const cookieRes = await axios.get('https://finance.yahoo.com', {
+    headers: { 'User-Agent': YAHOO_UA },
+    httpsAgent,
+    timeout: 10000,
+    maxRedirects: 5,
+  });
+  const cookies = (cookieRes.headers['set-cookie'] || [])
+    .map(c => c.split(';')[0])
+    .join('; ');
+
+  // Step 2: exchange cookies for a crumb token
+  const crumbRes = await axios.get('https://query2.finance.yahoo.com/v1/test/getcrumb', {
+    headers: { 'User-Agent': YAHOO_UA, Cookie: cookies },
+    httpsAgent,
+    timeout: 6000,
+  });
+
+  _yahooSession = { cookies, crumb: String(crumbRes.data).trim() };
+  return _yahooSession;
+}
+
 /**
  * Fetch the next earnings date for a symbol from Yahoo Finance.
+ * Uses crumb + cookie auth required by Yahoo's v10 API.
  * Returns a Date or null (on error or no data).
- *
- * @param {string} symbol  e.g. 'AAPL', 'NVDA'
- * @returns {Promise<Date|null>}
  */
 async function fetchEarningsDate(symbol) {
   const cached = earningsCache[symbol];
@@ -38,9 +69,12 @@ async function fetchEarningsDate(symbol) {
   }
 
   try {
-    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=calendarEvents`;
+    const session = await getYahooSession();
+    const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}` +
+                `?modules=calendarEvents&crumb=${encodeURIComponent(session.crumb)}`;
+
     const res = await axios.get(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+      headers: { 'User-Agent': YAHOO_UA, Cookie: session.cookies },
       timeout: 6000,
       httpsAgent,
     });
@@ -50,14 +84,12 @@ async function fetchEarningsDate(symbol) {
     let earningsDate = null;
 
     if (Array.isArray(rawDates) && rawDates.length > 0) {
-      // Yahoo returns Unix epoch in .raw; pick the first upcoming or most recent date
       const dates = rawDates
         .map(d => (typeof d === 'object' ? d.raw : d))
         .filter(Boolean)
         .map(ts => new Date(ts * 1000))
         .sort((a, b) => a - b);
 
-      // Prefer the nearest future date; fall back to most recent past date
       const now = new Date();
       const future = dates.filter(d => d >= now);
       earningsDate = future.length ? future[0] : dates[dates.length - 1];
@@ -65,8 +97,15 @@ async function fetchEarningsDate(symbol) {
 
     earningsCache[symbol] = { fetchedAt: Date.now(), earningsDate };
     return earningsDate;
+
   } catch (err) {
-    console.warn(`[Events] Earnings fetch failed for ${symbol}:`, err.message);
+    // On 401: crumb may have expired — reset session so next call re-authenticates
+    if (err.response?.status === 401) {
+      _yahooSession = null;
+      console.warn(`[Events] Earnings 401 for ${symbol} — session reset, will retry next cycle`);
+    } else {
+      console.warn(`[Events] Earnings fetch failed for ${symbol}: ${err.message}`);
+    }
     earningsCache[symbol] = { fetchedAt: Date.now(), earningsDate: null };
     return null;
   }
@@ -74,12 +113,6 @@ async function fetchEarningsDate(symbol) {
 
 /**
  * Check whether a new entry should be blocked due to an upcoming/recent earnings event.
- *
- * @param {string}    symbol
- * @param {Date|null} earningsDate   result of fetchEarningsDate()
- * @param {number}    daysBefore     block N days before earnings  (default 5)
- * @param {number}    daysAfter      block M days after  earnings  (default 2)
- * @returns {{ blocked: boolean, reason?: string }}
  */
 function isEarningsBlocked(symbol, earningsDate, daysBefore = 5, daysAfter = 2) {
   if (!earningsDate) return { blocked: false };
@@ -101,16 +134,8 @@ function isEarningsBlocked(symbol, earningsDate, daysBefore = 5, daysAfter = 2) 
 
 /**
  * High-level helper: fetch earnings date then check if entry should be blocked.
- * Returns { blocked, reason?, earningsDate? }
- *
- * @param {string} symbol
- * @param {object} [opts]
- * @param {number} [opts.daysBefore=5]
- * @param {number} [opts.daysAfter=2]
- * @returns {Promise<{ blocked: boolean, reason?: string, earningsDate?: Date }>}
  */
 async function checkEarningsBlock(symbol, { daysBefore = 5, daysAfter = 2 } = {}) {
-  // Crypto doesn't have earnings
   if (CRYPTO_SYMBOLS.has(symbol.replace('-USD', '').toUpperCase())) {
     return { blocked: false };
   }
