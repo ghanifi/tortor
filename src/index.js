@@ -729,8 +729,10 @@ async function runCycle() {
               const aiMode     = config.strategy?.ai_mode     || 'gate';
               const aiMinScore = config.strategy?.ai_min_score ?? 50;
 
-              // override mode: AI may promote a near-miss to BUY
-              if (aiMode === 'override' && finalScore >= aiMinScore && pyramidLevel === 0) {
+              // override mode: AI may promote a near-miss to BUY (only during market hours)
+              const marketForOverride = isMarketOpen(symbol);
+              if (aiMode === 'override' && finalScore >= aiMinScore && pyramidLevel === 0 &&
+                  (marketForOverride.open || marketForOverride.exchange === 'CRYPTO')) {
                 const aiCheck = canCallAI(state);
                 if (aiCheck.allowed) {
                   try {
@@ -881,6 +883,16 @@ async function runCycle() {
           continue;
         }
         filterLog.correlation = 'PASS';
+
+        // Market hours early exit — skip AI budget for non-actionable cycles
+        const marketForAI = isMarketOpen(symbol);
+        if (!marketForAI.open && marketForAI.exchange !== 'CRYPTO') {
+          assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold',
+            reason: `Market closed — ${marketForAI.reason}` });
+          logDecision({ ...decisionData, filters: filterLog, decision: 'hold',
+            failReason: `Market closed — ${marketForAI.reason}` });
+          continue;
+        }
 
         // AI Auditor (Layer 14) — final gate for new entries
         // Skip if AI was already called in Pass 1 (override mode promoted this candidate)
