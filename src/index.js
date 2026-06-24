@@ -19,7 +19,7 @@ const { canCallAI, recordCall } = require('./analysis/ai_budget');
 const { logDecision } = require('./analysis/decision-logger');
 const { calcFinalScore, scoreToTier } = require('./analysis/final-score');
 const SlackNotifier = require('./slack');
-const { isMarketOpen } = require('./market-hours');
+const { isMarketOpen, isCryptoQuietHour } = require('./market-hours');
 const { runCryptoScan } = require('./analysis/crypto-scanner');
 const { logSpreads } = require('./analysis/spread-logger');
 const path = require('path');
@@ -56,6 +56,12 @@ async function executeSell({ symbol, pos, portion, reason, currentPrice, state, 
         ? { positionIds: pos.positionIds, positionId: pos.positionId, instrumentId: pos.instrumentId }
         : symbol;
       await etoroClient.sellPosition(sellArg);
+    }
+
+    // Record loss cooldown so the same symbol isn't immediately re-entered after a loss
+    if (pnlThisSell < 0 && portion >= 1) {
+      if (!state.loss_cooldowns) state.loss_cooldowns = {};
+      state.loss_cooldowns[symbol] = { ts: new Date().toISOString(), pnl: Number(pnlThisSell.toFixed(2)) };
     }
 
     if (portion >= 1) {
@@ -585,9 +591,10 @@ async function runCycle() {
         }
 
         const minHoldMinutes = config.strategy?.min_hold_minutes ?? 60;
+        const maxLossPct     = config.strategy?.max_loss_pct     ?? 0.30;
         const exitResult = checkExitTrigger({
           pos, currentPrice, assetRegime,
-          currentMarketState, prevMarketState, minHoldMinutes,
+          currentMarketState, prevMarketState, minHoldMinutes, maxLossPct,
         });
 
         if (exitResult._skipped) {
@@ -655,9 +662,9 @@ async function runCycle() {
         }
       }
 
-      // d. Cooldown check — skip symbols rejected 3× for the same reason (no open position)
-      // Only applies to pure watchlist symbols; open positions always proceed to exit logic above.
+      // d. Cooldown checks (no open position only — open positions always go through exit logic)
       if ((pos.quantity || 0) === 0) {
+        // d1. Rejection cooldown — skip symbols rejected 3× for the same reason
         const cooldownMinutes = config.strategy?.rejection_cooldown_minutes ?? 60;
         const cooldownMs = cooldownMinutes * 60 * 1000;
         const rej = state.rejection_counts?.[symbol];
@@ -667,6 +674,21 @@ async function runCycle() {
           assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason });
           logDecision({ ...decisionData, filters: {}, decision: 'hold', failReason: reason });
           continue;
+        }
+
+        // d2. Loss cooldown — don't re-enter a symbol that just stopped out with a loss
+        const lossCooldownHours = config.strategy?.loss_cooldown_hours ?? 4;
+        const lastLoss = state.loss_cooldowns?.[symbol];
+        if (lastLoss) {
+          const lossAgeMs = Date.now() - new Date(lastLoss.ts || lastLoss).getTime();
+          if (lossAgeMs < lossCooldownHours * 3600000) {
+            const minsLeft = Math.ceil((lossCooldownHours * 3600000 - lossAgeMs) / 60000);
+            const pnlStr = lastLoss.pnl != null ? ` ($${lastLoss.pnl})` : '';
+            const reason = `Loss cooldown: ${minsLeft}min remaining after loss${pnlStr}`;
+            assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason });
+            logDecision({ ...decisionData, filters: {}, decision: 'hold', failReason: reason });
+            continue;
+          }
         }
       }
 
@@ -952,6 +974,16 @@ async function runCycle() {
       } else {
         filterLog.correlation = 'SKIP';
         filterLog.ai_audit    = 'SKIP';
+      }
+
+      // Crypto quiet hours: no new positions opened 00:00–06:59 UTC (illiquid window).
+      // Overnight gaps in this window caused the worst historical losses (TRX, SOL).
+      if ((symbol in cryptoCandidates) && decision.tranche === 1 && isCryptoQuietHour()) {
+        const hour = new Date().getUTCHours();
+        const reason = `Crypto quiet hours: ${hour}:00 UTC (new entries blocked 00:00–07:00)`;
+        assetReports.push({ symbol, price: currentPrice, change: changePct, action: 'hold', reason });
+        logDecision({ ...decisionData, filters: filterLog, decision: 'hold', failReason: reason });
+        continue;
       }
 
       // max_positions cap for scanner candidates — checked in Pass 2 so source tags

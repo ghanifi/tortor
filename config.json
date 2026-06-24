@@ -39,7 +39,9 @@
     "market_state_cache_minutes": 60,
     "ai_mode": "override",
     "ai_min_score": 50,
-    "min_hold_minutes": 60
+    "min_hold_minutes": 60,
+    "max_loss_pct": 0.30,
+    "loss_cooldown_hours": 4
   },
   "thresholds": {
     "stocks": {
@@ -83,7 +85,7 @@
     "btc_ema_period": 50,
     "volume_surge_multiplier": 1.5,
     "top_n": 5,
-    "min_score": 60,
+    "min_score": 65,
     "strong_buy_score": 80,
     "max_positions": 3,
     "budget_per_trade": 10,

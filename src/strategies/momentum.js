@@ -69,12 +69,25 @@ function decideMomentum({ pyramidLevel, currentPrice, entryPrice, level2Price, a
  * @param {string} params.currentMarketState
  * @param {string|null} params.prevMarketState
  * @param {number} [params.minHoldMinutes=60] - minimum hold time before trend-break exit fires
+ * @param {number} [params.maxLossPct=0.30]   - hard backstop: exit if loss exceeds this fraction
  * @returns {{ exit: boolean, type?: 'hard'|'soft', portion?: number, reason?: string }}
  */
-function checkExitTrigger({ pos, currentPrice, assetRegime, currentMarketState, prevMarketState, minHoldMinutes = 60 }) {
+function checkExitTrigger({ pos, currentPrice, assetRegime, currentMarketState, prevMarketState, minHoldMinutes = 60, maxLossPct = 0.30 }) {
   // PANIC: hard exit — no AI gate, immediate full close
   if (currentMarketState === 'PANIC') {
     return { exit: true, type: 'hard', portion: 1, reason: 'Market state: PANIC → full position closed' };
+  }
+
+  // Trigger 0: Max-loss backstop — catches ATR gap (e.g. illiquid crypto overnight crash).
+  // Fires BEFORE ATR stop so TRX-type gaps don't silently exceed the stop level.
+  if (pos.avg_cost && maxLossPct > 0) {
+    const lossFrac = (currentPrice - pos.avg_cost) / pos.avg_cost;
+    if (lossFrac < -maxLossPct) {
+      return {
+        exit: true, type: 'hard', portion: 1,
+        reason: `Max loss: ${(lossFrac * 100).toFixed(1)}% < -${(maxLossPct * 100).toFixed(0)}% limit`,
+      };
+    }
   }
 
   // Trigger 1: ATR trailing stop — hard exit, fires regardless of profit/loss, no AI gate

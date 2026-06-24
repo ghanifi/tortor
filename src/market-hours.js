@@ -51,4 +51,10 @@ function isMarketOpen(symbol, now = new Date()) {
   return { open, exchange, reason: open ? null : 'NYSE closed (09:30–16:00 ET)' };
 }
 
-module.exports = { isMarketOpen, getExchange, getTimeInZone };
+// Returns true during 00:00–06:59 UTC — lowest liquidity window for crypto.
+// New crypto positions opened here face overnight gap risk with no human oversight.
+function isCryptoQuietHour(now = new Date()) {
+  return now.getUTCHours() < 7;
+}
+
+module.exports = { isMarketOpen, getExchange, getTimeInZone, isCryptoQuietHour };
