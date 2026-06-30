@@ -704,11 +704,16 @@ async function runCycle() {
 
       // ── Hard gates (binary — override score) ────────────────────────────────
       const minState = config.strategy?.min_global_state || 'RISK_ON';
+      // Rank order: PANIC=0, RISK_OFF=1, RISK_NEUTRAL=2, RISK_ON=3
+      // Use rank comparison so RISK_ON satisfies a RISK_NEUTRAL minimum.
+      const STATE_RANK = { PANIC: 0, RISK_OFF: 1, RISK_NEUTRAL: 2, RISK_ON: 3 };
+      const currentRank = STATE_RANK[currentMarketState] ?? 0;
+      const minRank     = STATE_RANK[minState]            ?? 2;
       // Crypto scanner candidates skip the equity market-state gate:
       // they already have the BTC EMA50 gate as their own macro filter.
       // PANIC is still enforced globally (handled earlier in cycle).
       const isCryptoCandidate = symbol in cryptoCandidates;
-      if (!isCryptoCandidate && currentMarketState !== minState) {
+      if (!isCryptoCandidate && currentRank < minRank) {
         allFiltersPass = false;
         failReason = `Market state: ${currentMarketState} (${minState} required)`;
         filterLog.market_state = 'FAIL';
