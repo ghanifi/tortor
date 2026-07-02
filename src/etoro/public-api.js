@@ -37,7 +37,13 @@ class EToroPublicAPI {
   async getPortfolioPositions() {
     const res = await this.client.get('/api/v1/trading/info/real/pnl', { headers: this._headers() });
     const raw = res.data?.clientPortfolio;
-    if (!raw) throw new Error('Unexpected portfolio response shape');
+    if (!raw) {
+      // Log response type to distinguish proxy HTML from real API errors
+      const snippet = typeof res.data === 'string'
+        ? res.data.slice(0, 120).replace(/\n/g, ' ')
+        : JSON.stringify(res.data).slice(0, 120);
+      throw new Error(`Unexpected portfolio response shape — got: ${snippet}`);
+    }
 
     // Group multiple lots of same instrument into one position (weighted avg cost)
     const byInstrument = {};
@@ -172,66 +178,54 @@ class EToroPublicAPI {
 
   // Buy: opens a new position by amount (USD)
   // Returns { positionId, openRate, orderId }
+  // Uses v2 endpoint — v1 /by-amount was deprecated and removed (returns 404)
   async buyAsset({ symbol, amount, leverage = 1 }) {
-    const instrumentId = await this.getInstrumentId(symbol);
-    if (!instrumentId) throw new Error(`Instrument not found: ${symbol}`);
-
-    // Body must be PascalCase per eToro API spec
-    const res = await this.client.post('/api/v1/trading/execution/market-open-orders/by-amount', {
-      InstrumentID: instrumentId,
-      IsBuy: true,
-      Leverage: leverage,
-      Amount: amount,
+    const res = await this.client.post('/api/v2/trading/execution/orders', {
+      action: 'open',
+      transaction: 'buy',
+      symbol: symbol.toUpperCase(),
+      orderType: 'mkt',
+      leverage,
+      amount,
+      orderCurrency: 'usd',
     }, { headers: this._headers() });
 
     const data = res.data;
-    if (data.isSucceeded === false) throw new Error(`Buy failed: ${JSON.stringify(data)}`);
+    if (!data.orderId) throw new Error(`Buy failed: ${JSON.stringify(data)}`);
     return {
-      positionId: data.positionID ?? data.orderID,
-      openRate: data.openRate,
-      orderId: data.orderID,
+      positionId: data.orderId,
+      openRate: null,
+      orderId: data.orderId,
     };
   }
 
-  // Sell: closes an entire position by positionId
-  // symbolOrId: positionId (number) preferred; symbol string resolved if needed
+  // Sell: closes an entire position by positionId or symbol
+  // Uses v2 endpoint — closes all lots in one request
   async sellPosition(positionIdOrSymbol) {
-    let positionId = positionIdOrSymbol;
+    let idsToClose;
 
-    // If string (symbol), find the open position and use all its lot IDs
-    let instrumentId = null;
     if (typeof positionIdOrSymbol === 'string') {
       const { positions } = await this.getPortfolioPositions();
       const enriched = await this.enrichPositionsWithSymbols(positions);
       const pos = enriched.find(p => p.symbol?.toUpperCase() === positionIdOrSymbol.toUpperCase());
       if (!pos) throw new Error(`No open position for symbol: ${positionIdOrSymbol}`);
-      positionId = pos.positionIds || [pos.positionId];
-      instrumentId = pos.instrumentId;
-    } else if (positionIdOrSymbol?.instrumentId) {
-      instrumentId = positionIdOrSymbol.instrumentId;
-      positionId = positionIdOrSymbol.positionIds || [positionIdOrSymbol.positionId || positionIdOrSymbol];
+      idsToClose = pos.positionIds || [pos.positionId];
+    } else if (positionIdOrSymbol?.positionIds) {
+      idsToClose = positionIdOrSymbol.positionIds;
+    } else if (Array.isArray(positionIdOrSymbol)) {
+      idsToClose = positionIdOrSymbol;
+    } else {
+      idsToClose = [positionIdOrSymbol?.positionId ?? positionIdOrSymbol];
     }
 
-    // If position object was passed with multiple lots, close all
-    const idsToClose = Array.isArray(positionId) ? positionId : [positionId];
+    const res = await this.client.post('/api/v2/trading/execution/orders', {
+      action: 'close',
+      transaction: 'sell',
+      positionIds: idsToClose,
+    }, { headers: this._headers() });
 
-    // InstrumentId required by close endpoint — resolve from portfolio if not yet known
-    if (!instrumentId) {
-      const { positions } = await this.getPortfolioPositions();
-      const pos = positions.find(p => p.positionIds?.includes(idsToClose[0]) || p.positionId === idsToClose[0]);
-      instrumentId = pos?.instrumentId;
-    }
-    if (!instrumentId) throw new Error(`Cannot resolve instrumentId for positionId ${idsToClose[0]}`);
-
-    for (const pid of idsToClose) {
-      const res = await this.client.post(
-        `/api/v1/trading/execution/market-close-orders/positions/${pid}`,
-        { InstrumentId: instrumentId },
-        { headers: this._headers() }
-      );
-      const data = res.data;
-      if (data.isSucceeded === false) throw new Error(`Sell failed for positionId ${pid}: ${JSON.stringify(data)}`);
-    }
+    const data = res.data;
+    if (!data.orderId) throw new Error(`Sell failed: ${JSON.stringify(data)}`);
     return { positionId: idsToClose[0], closed: true };
   }
 }
