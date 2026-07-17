@@ -4,9 +4,10 @@ window.DashboardPage = {
 
   async render(container) {
     try {
-      const [state, config] = await Promise.all([
+      const [state, config, trades] = await Promise.all([
         apiGet('/api/state'),
         apiGet('/api/config'),
+        apiGet('/api/history'),
       ]);
       if (!state) return;
 
@@ -15,7 +16,7 @@ window.DashboardPage = {
       const openPositions = Object.entries(state.positions || {})
         .filter(([, p]) => p.quantity > 0);
       let portfolioVal = 0;
-      let totalPnl = 0;
+      let unrealizedPnl = 0;
       for (const [sym, p] of openPositions) {
         const pnlUsd = p.etoro_pnl_usd ?? null;
         const pnlPct = (state.prices?.[sym] && p.avg_cost)
@@ -24,18 +25,21 @@ window.DashboardPage = {
           ?? (pnlUsd != null && pnlPct ? pnlUsd / pnlPct : null);
         if (investedUsd != null && pnlUsd != null) {
           portfolioVal += investedUsd + pnlUsd;
-          totalPnl += pnlUsd;
+          unrealizedPnl += pnlUsd;
         } else {
           // Fallback for positions with no eToro pnl data yet (USD instruments only)
           const price = state.prices?.[sym] || p.avg_cost || 0;
           const cost = (p.quantity || 0) * (p.avg_cost || 0);
           portfolioVal += (p.quantity || 0) * price;
-          totalPnl += (p.quantity || 0) * price - cost;
+          unrealizedPnl += (p.quantity || 0) * price - cost;
         }
       }
       const cash = state.cash || 0;
-      const totalCost = portfolioVal - totalPnl;
-      const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
+
+      // Total P&L = all-time realized P&L from closed (sell) trades
+      const totalPnl = (trades || [])
+        .filter(t => t.action === 'sell')
+        .reduce((sum, t) => sum + (t.pnl || 0), 0);
 
       const dryRun = config?.safety?.dry_run ?? true;
       const risk = state.risk || {};
@@ -62,11 +66,14 @@ window.DashboardPage = {
             <div class="stat-label">Portfolio</div>
             <div class="stat-value">${fmt$(portfolioVal)}</div>
             <div class="stat-sub">${openPositions.length} position${openPositions.length !== 1 ? 's' : ''}</div>
+            ${openPositions.length > 0
+              ? `<div class="stat-sub" style="color:${unrealizedPnl >= 0 ? 'var(--green)' : 'var(--red)'}">unrealized: ${fmt$(unrealizedPnl)}</div>`
+              : ''}
           </div>
           <div class="stat-card">
             <div class="stat-label">Total P&amp;L</div>
             <div class="stat-value ${totalPnl >= 0 ? 'green' : 'red'}">${fmt$(totalPnl)}</div>
-            <div class="stat-sub" style="color:${totalPnl >= 0 ? 'var(--green)' : 'var(--red)'}">${fmtPct(totalPnlPct)}</div>
+            <div class="stat-sub">all-time realized</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Regime</div>
