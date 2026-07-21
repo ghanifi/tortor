@@ -75,6 +75,16 @@ describe('checkExitTrigger — trigger 4 PANIC (highest priority)', () => {
     expect(r.exit).toBe(true);
     expect(r.portion).toBe(1);
   });
+
+  test('PANIC fires even at a loss (only unconditional exit)', () => {
+    const r = checkExitTrigger({
+      pos: { stop_price: 90, avg_cost: 100 }, currentPrice: 80,
+      assetRegime: BULL_REGIME,
+      currentMarketState: 'PANIC', prevMarketState: 'RISK_ON'
+    });
+    expect(r.exit).toBe(true);
+    expect(r.portion).toBe(1);
+  });
 });
 
 describe('checkExitTrigger — trigger 1 ATR stop', () => {
@@ -89,9 +99,19 @@ describe('checkExitTrigger — trigger 1 ATR stop', () => {
     expect(r.reason).toMatch(/ATR stop/);
   });
 
-  test('ATR stop fires even when below avg_cost (no zararda override)', () => {
+  test('ATR stop is skipped when it would realize a loss (loss protection)', () => {
     const r = checkExitTrigger({
       pos: { stop_price: 80, avg_cost: 100 }, currentPrice: 75,
+      assetRegime: BULL_REGIME,
+      currentMarketState: 'RISK_ON', prevMarketState: 'RISK_ON'
+    });
+    expect(r.exit).toBe(false);
+    expect(r._skipped).toMatch(/loss-protection/);
+  });
+
+  test('ATR stop still fires above avg_cost (breakeven/profit lock unaffected)', () => {
+    const r = checkExitTrigger({
+      pos: { stop_price: 105, avg_cost: 100 }, currentPrice: 103,
       assetRegime: BULL_REGIME,
       currentMarketState: 'RISK_ON', prevMarketState: 'RISK_ON'
     });
@@ -122,6 +142,17 @@ describe('checkExitTrigger — trigger 2 trend break', () => {
     expect(r.portion).toBe(1);
     expect(r.reason).toMatch(/Trend/);
   });
+
+  test('BEAR trend but would realize a loss → skipped (loss protection)', () => {
+    const oldEntry = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(); // 3h ago, clears min-hold
+    const r = checkExitTrigger({
+      pos: { stop_price: 85, avg_cost: 100, entry_at: oldEntry }, currentPrice: 95,
+      assetRegime: BEAR_REGIME,
+      currentMarketState: 'RISK_ON', prevMarketState: 'RISK_ON'
+    });
+    expect(r.exit).toBe(false);
+    expect(r._skipped).toMatch(/loss-protection/);
+  });
 });
 
 describe('checkExitTrigger — trigger 3 state degradation', () => {
@@ -143,6 +174,16 @@ describe('checkExitTrigger — trigger 3 state degradation', () => {
       currentMarketState: 'RISK_OFF', prevMarketState: 'RISK_OFF'
     });
     expect(r.exit).toBe(false);
+  });
+
+  test('RISK_OFF transition but would realize a loss → skipped (loss protection)', () => {
+    const r = checkExitTrigger({
+      pos: { stop_price: 85, avg_cost: 100 }, currentPrice: 95,
+      assetRegime: BULL_REGIME,
+      currentMarketState: 'RISK_OFF', prevMarketState: 'RISK_ON'
+    });
+    expect(r.exit).toBe(false);
+    expect(r._skipped).toMatch(/loss-protection/);
   });
 });
 

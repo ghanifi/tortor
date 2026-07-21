@@ -62,36 +62,34 @@ function decideMomentum({ pyramidLevel, currentPrice, entryPrice, level2Price, a
  * Check exit triggers in priority order.
  * Returns first trigger that fires, or { exit: false }.
  *
+ * PANIC is the only trigger that can realize a loss. Every other trigger is
+ * loss-protected: if selling now would close below avg_cost, the trigger is
+ * skipped and the position is held instead.
+ *
  * @param {object} params
- * @param {{ stop_price?: number, pyramid_level?: number, entry_at?: string }} params.pos
+ * @param {{ stop_price?: number, pyramid_level?: number, entry_at?: string, avg_cost?: number }} params.pos
  * @param {number} params.currentPrice
  * @param {{ trend: string }} params.assetRegime
  * @param {string} params.currentMarketState
  * @param {string|null} params.prevMarketState
  * @param {number} [params.minHoldMinutes=60] - minimum hold time before trend-break exit fires
- * @param {number} [params.maxLossPct=0.30]   - hard backstop: exit if loss exceeds this fraction
- * @returns {{ exit: boolean, type?: 'hard'|'soft', portion?: number, reason?: string }}
+ * @returns {{ exit: boolean, type?: 'hard'|'soft', portion?: number, reason?: string, _skipped?: string }}
  */
-function checkExitTrigger({ pos, currentPrice, assetRegime, currentMarketState, prevMarketState, minHoldMinutes = 60, maxLossPct = 0.30 }) {
-  // PANIC: hard exit — no AI gate, immediate full close
+function checkExitTrigger({ pos, currentPrice, assetRegime, currentMarketState, prevMarketState, minHoldMinutes = 60 }) {
+  // PANIC: hard exit — no AI gate, immediate full close. The only trigger
+  // allowed to realize a loss.
   if (currentMarketState === 'PANIC') {
     return { exit: true, type: 'hard', portion: 1, reason: 'Market state: PANIC → full position closed' };
   }
 
-  // Trigger 0: Max-loss backstop — catches ATR gap (e.g. illiquid crypto overnight crash).
-  // Fires BEFORE ATR stop so TRX-type gaps don't silently exceed the stop level.
-  if (pos.avg_cost && maxLossPct > 0) {
-    const lossFrac = (currentPrice - pos.avg_cost) / pos.avg_cost;
-    if (lossFrac < -maxLossPct) {
-      return {
-        exit: true, type: 'hard', portion: 1,
-        reason: `Max loss: ${(lossFrac * 100).toFixed(1)}% < -${(maxLossPct * 100).toFixed(0)}% limit`,
-      };
-    }
-  }
+  // Loss protection: no trigger below this point may sell below avg_cost.
+  const wouldRealizeLoss = pos.avg_cost != null && currentPrice < pos.avg_cost;
 
-  // Trigger 1: ATR trailing stop — hard exit, fires regardless of profit/loss, no AI gate
+  // Trigger 1: ATR trailing stop — hard exit, no AI gate
   if (pos.stop_price && currentPrice < pos.stop_price) {
+    if (wouldRealizeLoss) {
+      return { exit: false, _skipped: `ATR stop hit but loss-protection active (price $${currentPrice.toFixed(2)} < avg cost $${pos.avg_cost.toFixed(2)})` };
+    }
     return {
       exit: true, type: 'hard', portion: 1,
       reason: `ATR stop triggered ($${pos.stop_price.toFixed(2)})`,
@@ -108,11 +106,18 @@ function checkExitTrigger({ pos, currentPrice, assetRegime, currentMarketState, 
       return { exit: false, _skipped: `Trend broke but min hold ${minHoldMinutes}min (held ${heldMin}min)` };
     }
 
+    if (wouldRealizeLoss) {
+      return { exit: false, _skipped: `Trend broken but loss-protection active (price $${currentPrice.toFixed(2)} < avg cost $${pos.avg_cost.toFixed(2)})` };
+    }
+
     return { exit: true, type: 'soft', portion: 1, reason: 'Trend broken (EMA50 < EMA200)' };
   }
 
   // Trigger 3: Market deterioration (RISK_OFF transition) — soft exit, AI gate may apply
   if (prevMarketState !== 'RISK_OFF' && currentMarketState === 'RISK_OFF') {
+    if (wouldRealizeLoss) {
+      return { exit: false, _skipped: `RISK_OFF but loss-protection active (price $${currentPrice.toFixed(2)} < avg cost $${pos.avg_cost.toFixed(2)})` };
+    }
     return { exit: true, type: 'soft', portion: 1, reason: 'Market state: RISK_OFF → position closed' };
   }
 
