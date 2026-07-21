@@ -40,7 +40,6 @@
     "ai_mode": "override",
     "ai_min_score": 50,
     "min_hold_minutes": 60,
-    "max_loss_pct": 0.30,
     "loss_cooldown_hours": 4
   },
   "thresholds": {

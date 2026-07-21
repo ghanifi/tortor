@@ -591,10 +591,9 @@ async function runCycle() {
         }
 
         const minHoldMinutes = config.strategy?.min_hold_minutes ?? 60;
-        const maxLossPct     = config.strategy?.max_loss_pct     ?? 0.30;
         const exitResult = checkExitTrigger({
           pos, currentPrice, assetRegime,
-          currentMarketState, prevMarketState, minHoldMinutes, maxLossPct,
+          currentMarketState, prevMarketState, minHoldMinutes,
         });
 
         if (exitResult._skipped) {
