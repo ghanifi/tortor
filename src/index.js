@@ -556,8 +556,11 @@ async function runCycle() {
           }
         }
 
-        // Breakeven lock — once the position is profitable, the stop must never fall
-        // below avg_cost. This guarantees we never exit a winner at a loss.
+        // Breakeven lock — once the position is profitable, pin the stop at avg_cost
+        // so a subsequent pullback exits at breakeven rather than trailing back down.
+        // (The ATR stop itself can never fire below avg_cost anyway — see the
+        // loss-protection guard in checkExitTrigger — so this only matters for the
+        // exact-breakeven case.)
         if (pos.avg_cost && currentPrice > pos.avg_cost && pos.stop_price != null) {
           if (pos.stop_price < pos.avg_cost) {
             state.positions[symbol].stop_price = pos.avg_cost;
